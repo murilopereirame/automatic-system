@@ -40,20 +40,24 @@ flowchart LR
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components, run life cycle, data model, with diagrams |
 | [docs/UI.md](docs/UI.md) | The web UI: pages, editor, run view, with screenshots |
 | [docs/FORMULA.md](docs/FORMULA.md) | Formula reference: triggers, environment, notifications, blocks, templates |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Running it with Docker, first workflow, volumes, updating, CI/CD |
+| [docs/SECURITY.md](docs/SECURITY.md) | How the sandbox works, what is verified on every build, known limits |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Local setup, configuration, tests, adding blocks and triggers, API overview |
 
-## Quick start (development)
+## Quick start
 
 ```bash
-npm install
-npm run build
-AUTOWORKER_TOKEN=change-me npm start
+cp .env.example .env      # set AUTOWORKER_TOKEN and AUTOWORKER_SECRET_KEY
+docker compose up -d
 ```
 
-Open http://localhost:8080 and sign in with the token. Import
+Open http://localhost:8080, sign in with the token, and import
 `examples/clickup-to-pr.formula.yaml` on the Workflows page to see a complete
-workflow as blocks. See
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for details.
+workflow as blocks. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) has the details.
+
+To run it without Docker for development, see
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Outside the container there is no
+sandbox.
 
 ## Status
 

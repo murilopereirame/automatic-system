@@ -1,0 +1,59 @@
+# Hardened deployment of Auto Worker. See docs/DEPLOYMENT.md and docs/SECURITY.md.
+#
+#   cp .env.example .env    # then set AUTOWORKER_TOKEN and AUTOWORKER_SECRET_KEY
+#   docker compose up -d
+
+services:
+  autoworker:
+    image: ${AUTOWORKER_IMAGE:-ghcr.io/murilopereirame/automatic-system:latest}
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      AUTOWORKER_TOKEN: ${AUTOWORKER_TOKEN:?Set AUTOWORKER_TOKEN in .env}
+      AUTOWORKER_SECRET_KEY: ${AUTOWORKER_SECRET_KEY:?Set AUTOWORKER_SECRET_KEY in .env}
+      AUTOWORKER_PUBLIC_URL: ${AUTOWORKER_PUBLIC_URL:-}
+    ports:
+      # Only reachable from the host itself. Put a TLS reverse proxy in front for remote access.
+      - "127.0.0.1:${AUTOWORKER_PORT:-8080}:8080"
+    volumes:
+      - data:/data                 # database and encrypted secrets (server only)
+      - workspaces:/workspaces     # run workspaces
+      - agent-home:/home/agent     # Claude memory, skills, installed runtimes, caches
+      - ./formulas:/formulas:ro    # formula files imported at startup (workflows as code)
+
+    # ---- Sandbox ------------------------------------------------------------
+    # No extra privileges, ever: setuid binaries such as sudo have no effect.
+    security_opt:
+      - no-new-privileges:true
+    # Drop every capability, then add back the three the server needs to start
+    # and stop processes as the unprivileged agent user. Agent processes
+    # themselves end up with no capabilities at all.
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+      - KILL
+    # The image is immutable. Only the volumes and /tmp are writable.
+    read_only: true
+    tmpfs:
+      - /tmp:exec,mode=1777,size=2g
+      - /run:mode=755,size=16m
+    # Limits against runaway processes.
+    pids_limit: 2048
+    mem_limit: ${AUTOWORKER_MEMORY:-8g}
+    cpus: ${AUTOWORKER_CPUS:-4}
+    # Its own network: other compose projects and their containers are not on it.
+    networks:
+      - sandbox
+    # Never add: privileged, the Docker socket, host network/pid/ipc, or devices.
+
+networks:
+  sandbox:
+    driver: bridge
+
+volumes:
+  data:
+  workspaces:
+  agent-home:

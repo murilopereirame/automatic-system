@@ -1,5 +1,6 @@
 # Runs on every pull request (including stacked ones) and on main.
-# Make "test" a required status check on main to block merging when it fails.
+# Make both jobs required status checks on main to block merging when they fail.
+# On main, the image that passed the smoke test is published to GitHub Container Registry.
 name: CI
 
 on:
@@ -28,3 +29,62 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  image:
+    name: Build and smoke-test the container image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      AUTOWORKER_IMAGE: autoworker:ci
+      AUTOWORKER_TOKEN: ci-token
+      AUTOWORKER_SECRET_KEY: ci-secret-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ${{ env.AUTOWORKER_IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Start it with the hardened compose file
+        run: docker compose up --detach --no-build
+
+      # The smoke test needs the `ws` package from the repository's dependencies.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Check the sandbox from the inside
+        run: node docker/smoke-test.mjs http://localhost:8080 "$AUTOWORKER_TOKEN"
+
+      - name: Show container logs
+        if: failure()
+        run: docker compose logs
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish the image
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+          cache-from: type=gha

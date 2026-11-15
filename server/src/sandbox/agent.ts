@@ -26,6 +26,20 @@ export function agentIdentity(): { uid?: number; gid?: number } {
   return config.agentUid === undefined ? {} : { uid: config.agentUid, gid: config.agentGid ?? config.agentUid };
 }
 
+/**
+ * Command line for an interactive login shell of the agent user.
+ *
+ * The terminal library cannot drop supplementary groups when it switches
+ * user, so in the container the shell is started through `setpriv`, which
+ * switches uid and gid, clears all groups and then replaces itself with bash.
+ */
+export function agentShellCommand(): { file: string; args: string[] } {
+  if (config.agentUid === undefined) return { file: '/bin/bash', args: ['-l'] };
+  const uid = String(config.agentUid);
+  const gid = String(config.agentGid ?? config.agentUid);
+  return { file: 'setpriv', args: ['--reuid', uid, '--regid', gid, '--clear-groups', '/bin/bash', '-l'] };
+}
+
 /** Environment without any workflow specifics. Used for housekeeping commands. */
 export function baseEnv(): Record<string, string> {
   const miseShims = path.join(config.agentHome, '.local/share/mise/shims');
@@ -35,6 +49,8 @@ export function baseEnv(): Record<string, string> {
     SHELL: '/bin/bash',
     LANG: 'C.UTF-8',
     TERM: 'xterm-256color',
+    // The image is immutable; Claude Code must not try to update itself.
+    DISABLE_AUTOUPDATER: '1',
     PATH: [miseShims, path.join(config.agentHome, '.local/bin'), process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'].join(':'),
   };
 }

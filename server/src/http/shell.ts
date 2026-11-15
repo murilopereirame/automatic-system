@@ -9,7 +9,7 @@
 import type { FastifyInstance } from 'fastify';
 import pty from 'node-pty';
 import { config } from '../config.js';
-import { agentIdentity, baseEnv, workflowEnv } from '../sandbox/agent.js';
+import { agentShellCommand, baseEnv, workflowEnv } from '../sandbox/agent.js';
 import { getRun } from '../store/runs.js';
 import { getWorkflow } from '../store/workflows.js';
 import { isAuthenticated, isSameOrigin } from './auth.js';
@@ -29,7 +29,8 @@ export async function registerShell(app: FastifyInstance): Promise<void> {
     const { cwd, env } = shellSession(request.query.runId);
     let terminal: pty.IPty;
     try {
-      terminal = pty.spawn('/bin/bash', ['-l'], { name: 'xterm-256color', cols: 100, rows: 30, cwd, env, ...agentIdentity() });
+      const { file, args } = agentShellCommand();
+      terminal = pty.spawn(file, args, { name: 'xterm-256color', cols: 100, rows: 30, cwd, env });
     } catch (error) {
       socket.send(`Could not start a shell in ${cwd}: ${(error as Error).message}\r\n`);
       return socket.close();
