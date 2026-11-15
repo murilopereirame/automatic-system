@@ -80,8 +80,9 @@ Rules of thumb for blocks:
 
 1. Create `server/src/triggers/my-trigger.ts` implementing `TriggerType`:
    `start` for triggers that watch something, `handleWebhook` for triggers
-   that are called.
-2. Call `fire(payload, dedupeKey)` to start a run. With a `dedupeKey`, the same item starts a run only once.
+   that are called. Both receive the `trigger` they are about (its id and
+   settings), because a workflow can hold several triggers of one type.
+2. Call `fire(payload, dedupeKey)` to start a run. With a `dedupeKey`, the same item starts a run only once per workflow.
 3. Add it to the list in `server/src/triggers/index.ts`.
 
 ## API overview
@@ -103,4 +104,4 @@ All routes under `/api` need the session cookie or `Authorization: Bearer <token
 | `GET /api/secrets`, `PUT/DELETE /api/secrets/:name` | Secrets (names only on read) |
 | `GET/PUT /api/settings` | Git author identity |
 | `WS /api/shell?runId=` | Web shell |
-| `POST /hooks/:workflowId` | Webhook triggers (authenticated by the trigger) |
+| `POST /hooks/:workflowId/:triggerId` | Webhook triggers (authenticated by the trigger). Without `:triggerId` it calls the first trigger that takes webhooks |

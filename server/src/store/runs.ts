@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { db, now } from '../db.js';
-import type { Approval, Run, RunContext, RunEvent, RunStatus, Workflow } from '../types.js';
+import { upgradeDefinition, type Approval, type Run, type RunContext, type RunEvent, type RunStatus, type Workflow } from '../types.js';
 
 /** Emits `event` (RunEvent) and `run` (Run) whenever something changes, for live UI updates. */
 export const runUpdates = new EventEmitter();
@@ -30,7 +30,7 @@ function runFromRow(row: RunRow): Run {
     workflowName: row.workflow_name,
     status: row.status,
     stepIndex: row.step_index,
-    definition: JSON.parse(row.definition),
+    definition: upgradeDefinition(JSON.parse(row.definition)),
     context: JSON.parse(row.context),
     workspace: row.workspace,
     error: row.error ?? undefined,

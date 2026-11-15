@@ -16,7 +16,7 @@ const { parseFormula, toFormula } = await import('../src/formula.js');
 setSecret('CHAT_TOKEN', 'tok/123');
 
 async function run(notifications: NotificationWebhook[], steps: StepConfig[], trigger = {}) {
-  const definition = { trigger: { type: 'manual', with: {} }, environment: emptyEnvironment(), notifications, steps };
+  const definition = { triggers: [], environment: emptyEnvironment(), notifications, steps };
   const workflow = createWorkflow({ name: `notify-${Math.random()}`, definition });
   const started = engine.startRun(workflow, trigger);
   await engine.waitForIdle();

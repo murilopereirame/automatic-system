@@ -4,15 +4,15 @@
  * Two modes:
  *  - poll (default): asks ClickUp for the user's tasks at an interval. Works
  *    behind a firewall because only outgoing requests are needed.
- *  - webhook: ClickUp calls `/hooks/<workflow id>`. Instant, but the app must
+ *  - webhook: ClickUp calls `/hooks/<workflow id>/<trigger id>`. Instant, but the app must
  *    be reachable from the internet.
  */
 import { createHmac } from 'node:crypto';
 import { getCurrentUserId, getFirstTeamId, getTask, listAssignedTasks, type ClickupTask } from '../clickup.js';
 import { errorMessage, HttpError } from '../errors.js';
 import { getSecret, requireSecret } from '../store/secrets.js';
-import { hasSeenAnything, markSeen } from '../store/workflows.js';
-import type { Workflow } from '../types.js';
+import { markSeen } from '../store/workflows.js';
+import type { TriggerConfig, Workflow } from '../types.js';
 import type { Fire, TriggerType } from './types.js';
 import { safeEqual } from './webhook.js';
 
@@ -26,8 +26,8 @@ interface Settings {
   webhookSecret: string;
 }
 
-function readSettings(workflow: Workflow): Settings {
-  const raw = workflow.definition.trigger.with;
+function readSettings(trigger: TriggerConfig): Settings {
+  const raw = trigger.with;
   const value = (key: string, fallback: string) => (raw[key] === undefined || raw[key] === '' ? fallback : String(raw[key]));
   return {
     mode: value('mode', 'poll'),
@@ -45,19 +45,18 @@ function taskPayload(task: ClickupTask): Record<string, unknown> {
 }
 
 /**
- * One polling pass. Tasks that are already assigned when the workflow is first
- * enabled only start runs when "includeExisting" is on, so enabling a workflow
- * does not flood the queue with old work.
+ * One polling pass. Tasks that are already assigned when the trigger polls for
+ * the first time only start runs when "includeExisting" is on, so enabling a
+ * workflow or adding a trigger does not flood the queue with old work.
  */
-export async function pollOnce(workflow: Workflow, fire: Fire): Promise<void> {
-  const settings = readSettings(workflow);
+export async function pollOnce(workflow: Workflow, trigger: TriggerConfig, fire: Fire): Promise<void> {
+  const settings = readSettings(trigger);
   const token = settings.token();
   const assigneeId = settings.assigneeId || (await getCurrentUserId(token));
   const teamId = settings.teamId || (await getFirstTeamId(token));
   const tasks = await listAssignedTasks(token, teamId, assigneeId);
 
-  const firstPoll = !hasSeenAnything(workflow.id);
-  markSeen(workflow.id, 'baseline');
+  const firstPoll = markSeen(workflow.id, `baseline:${trigger.id}`);
   for (const task of tasks) {
     if (firstPoll && !settings.includeExisting) markSeen(workflow.id, `task:${task.id}`);
     else fire(taskPayload(task), `task:${task.id}`);
@@ -78,17 +77,17 @@ export const clickupTrigger: TriggerType = {
     { key: 'webhookSecret', label: 'Webhook signing secret', type: 'secret', default: 'CLICKUP_WEBHOOK_SECRET', help: 'Webhook mode only: the secret ClickUp returned when the webhook was created.' },
   ],
 
-  start(workflow, fire) {
-    const settings = readSettings(workflow);
+  start(workflow, trigger, fire) {
+    const settings = readSettings(trigger);
     if (settings.mode !== 'poll') return () => {};
 
     let stopped = false;
     let timer: NodeJS.Timeout | undefined;
     const tick = async () => {
       try {
-        await pollOnce(workflow, fire);
+        await pollOnce(workflow, trigger, fire);
       } catch (error) {
-        console.warn(`ClickUp poll for "${workflow.name}" failed: ${errorMessage(error)}`);
+        console.warn(`ClickUp poll for "${workflow.name}" (trigger "${trigger.id}") failed: ${errorMessage(error)}`);
       }
       if (!stopped) timer = setTimeout(tick, settings.pollSeconds * 1000);
     };
@@ -99,8 +98,8 @@ export const clickupTrigger: TriggerType = {
     };
   },
 
-  async handleWebhook(workflow, request, fire) {
-    const settings = readSettings(workflow);
+  async handleWebhook(_workflow, trigger, request, fire) {
+    const settings = readSettings(trigger);
     const signingSecret = getSecret(settings.webhookSecret);
     if (!signingSecret) throw new HttpError(401, `Secret "${settings.webhookSecret}" is not set`);
     const expected = createHmac('sha256', signingSecret).update(request.rawBody).digest('hex');

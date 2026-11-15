@@ -10,6 +10,7 @@ const { waitForIdle } = await import('../src/engine/engine.js');
 let app: FastifyInstance;
 const auth = { authorization: `Bearer ${TOKEN}` };
 
+// The single `trigger` is the shape from before workflows could have several; the API still accepts it.
 const definition = {
   trigger: { type: 'webhook', with: {} },
   environment: { env: { STAGE: 'test' }, secrets: ['API_KEY'] },
@@ -90,8 +91,35 @@ test('a webhook starts a run only with the right secret', async () => {
   assert.ok(detail.events.some((event: any) => event.type === 'output' && /ref=main/.test(event.data.text)));
 });
 
+test('a workflow with several triggers starts runs from each and reports which one fired', async () => {
+  const several = {
+    triggers: [
+      { id: 'deploys', type: 'webhook' },
+      { id: 'releases', type: 'webhook' },
+    ],
+    steps: [{ id: 'echo', type: 'shell', with: { command: 'echo "by={{triggeredBy.id}}"' } }],
+  };
+  const workflow = (await app.inject({ method: 'POST', url: '/api/workflows', headers: auth, payload: { name: 'Several', definition: several } })).json();
+  const hook = (path: string) => app.inject({ method: 'POST', url: `/hooks/${workflow.id}${path}?secret=${workflow.hookSecret}`, payload: {} });
+
+  assert.equal((await hook('/nope')).statusCode, 404);
+  assert.equal((await hook('/releases')).statusCode, 200);
+  assert.equal((await hook('')).statusCode, 200, 'the URL without a trigger id calls the first trigger');
+  assert.equal((await app.inject({ method: 'POST', url: `/api/workflows/${workflow.id}/run`, headers: auth, payload: {} })).statusCode, 200);
+  await waitForIdle();
+
+  const runs = (await app.inject({ url: `/api/runs?workflowId=${workflow.id}`, headers: auth })).json();
+  assert.deepEqual(runs.map((run: any) => run.context.triggeredBy.id).sort(), ['deploys', 'manual', 'releases']);
+
+  const released = runs.find((run: any) => run.context.triggeredBy.id === 'releases');
+  const detail = (await app.inject({ url: `/api/runs/${released.id}`, headers: auth })).json();
+  const triggered = detail.events.find((event: any) => event.type === 'triggered');
+  assert.deepEqual([triggered.data.trigger, triggered.data.triggerId], ['webhook', 'releases']);
+  assert.ok(detail.events.some((event: any) => event.type === 'output' && /by=releases/.test(event.data.text)));
+});
+
 test('approvals show up as pending and can be resolved through the API', async () => {
-  const gated = { ...definition, trigger: { type: 'manual', with: {} }, steps: [{ id: 'gate', type: 'approval', with: { message: 'Ship it?' } }] };
+  const gated = { ...definition, triggers: [], steps: [{ id: 'gate', type: 'approval', with: { message: 'Ship it?' } }] };
   const workflow = (await app.inject({ method: 'POST', url: '/api/workflows', headers: auth, payload: { name: 'Gated', definition: gated } })).json();
   const run = (await app.inject({ method: 'POST', url: `/api/workflows/${workflow.id}/run`, headers: auth, payload: {} })).json();
   await waitForIdle();

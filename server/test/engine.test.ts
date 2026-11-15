@@ -11,7 +11,7 @@ const { createWorkflow } = await import('../src/store/workflows.js');
 const { setSecret } = await import('../src/store/secrets.js');
 
 function workflowWith(steps: StepConfig[], environment = emptyEnvironment(), notifications: NotificationWebhook[] = []): Workflow {
-  return createWorkflow({ name: `test-${Math.random()}`, definition: { trigger: { type: 'manual', with: {} }, environment, notifications, steps } });
+  return createWorkflow({ name: `test-${Math.random()}`, definition: { triggers: [], environment, notifications, steps } });
 }
 
 async function runToRest(workflow: Workflow, trigger = {}) {

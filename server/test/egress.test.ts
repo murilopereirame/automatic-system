@@ -113,7 +113,7 @@ test('the server itself is not restricted when it presents the gateway secret', 
 
 test('the sync endpoint serves the allow list of enabled workflows to the gateway only', async () => {
   const definition = (hosts: string[]) => ({
-    trigger: { type: 'manual', with: {} },
+    triggers: [],
     environment: { ...emptyEnvironment(), network: { allow: hosts } },
     notifications: [],
     steps: [],
@@ -136,7 +136,7 @@ test('sandbox processes are pointed at the proxy, except for the workflow servic
   const environment = { ...emptyEnvironment(), services: [{ name: 'localhost', image: 'mongo:7', ports: [port(target)], env: {} }] };
   const workflow = createWorkflow({
     name: 'proxied',
-    definition: { trigger: { type: 'manual', with: {} }, environment, notifications: [], steps: [{ id: 'env', type: 'shell', with: { command: 'env | grep -i proxy | sort' } }] },
+    definition: { triggers: [], environment, notifications: [], steps: [{ id: 'env', type: 'shell', with: { command: 'env | grep -i proxy | sort' } }] },
   });
   const run = engine.startRun(workflow, {});
   await engine.waitForIdle();

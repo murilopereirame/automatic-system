@@ -82,7 +82,7 @@ export function RunPage({ runId }: { runId: string }) {
         )}
       </PageHeader>
       <p className="muted">
-        {triggerSummary(run.context.trigger)} · started <TimeAgo time={run.createdAt} />
+        {triggerSummary(run.context)} · started <TimeAgo time={run.createdAt} />
         {run.context.repo && ` · ${run.context.repo.owner}/${run.context.repo.name} on ${run.context.repo.branch}`}
       </p>
       <ErrorNote message={error ?? (run.status === 'failed' ? run.error : undefined)} />

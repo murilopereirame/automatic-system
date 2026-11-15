@@ -63,6 +63,9 @@ CREATE TABLE IF NOT EXISTS trigger_seen (
   key TEXT NOT NULL,
   PRIMARY KEY (workflow_id, key)
 );
+-- Before a workflow could have several triggers, its one ClickUp trigger kept a
+-- single "baseline" marker. Markers are now per trigger id, and that trigger got the id "clickup".
+UPDATE OR IGNORE trigger_seen SET key = 'baseline:clickup' WHERE key = 'baseline';
 `;
 
 function open(): DatabaseSync {

@@ -17,7 +17,7 @@ const NEW_WORKFLOW: WorkflowDraft = {
   description: '',
   enabled: true,
   definition: {
-    trigger: { type: 'manual', with: {} },
+    triggers: [],
     environment: { runtimes: [], mcpServers: {}, memory: [], skills: [], services: [], network: { allow: [] }, env: {}, secrets: [], mounts: [] },
     notifications: [],
     steps: [],
@@ -90,11 +90,6 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
 
   if (!meta.data || (workflowId && !saved)) return <ErrorNote message={error ?? meta.error} />;
 
-  // Only triggers that are called from outside have a URL to show.
-  const { type: triggerType, with: triggerSettings } = draft.definition.trigger;
-  const receivesCalls = triggerType === 'webhook' || (triggerType === 'clickup' && triggerSettings.mode === 'webhook');
-  const hookUrl = saved && receivesCalls ? `${window.location.origin}/hooks/${saved.id}${triggerType === 'webhook' ? `?secret=${saved.hookSecret}` : ''}` : undefined;
-
   return (
     <>
       <PageHeader title={workflowId ? draft.name || 'Workflow' : 'New workflow'}>
@@ -126,7 +121,7 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
         <label className="field checkbox">
           <input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />
           <span>Enabled</span>
-          <small>Disabled workflows ignore their trigger.</small>
+          <small>Disabled workflows ignore their triggers.</small>
         </label>
       </section>
 
@@ -139,21 +134,15 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
       </div>
 
       {tab === 'Blocks' && (
-        <>
-          {hookUrl && (
-            <p className="hint">
-              Webhook URL for this workflow: <code>{hookUrl}</code>
-            </p>
-          )}
-          <BlockPipeline
-            meta={meta.data}
-            trigger={draft.definition.trigger}
-            steps={draft.definition.steps}
-            secretNames={secrets.data ?? []}
-            onTriggerChange={(trigger) => setDefinition({ trigger })}
-            onStepsChange={(steps) => setDefinition({ steps })}
-          />
-        </>
+        <BlockPipeline
+          meta={meta.data}
+          triggers={draft.definition.triggers}
+          steps={draft.definition.steps}
+          secretNames={secrets.data ?? []}
+          hooks={saved && { workflowId: saved.id, secret: saved.hookSecret }}
+          onTriggersChange={(triggers) => setDefinition({ triggers })}
+          onStepsChange={(steps) => setDefinition({ steps })}
+        />
       )}
       {tab === 'Environment' && (
         <EnvironmentEditor environment={draft.definition.environment} secretNames={secrets.data ?? []} requirements={requirements.data} egressEnforced={sandbox.data?.egressEnforced} onChange={(environment) => setDefinition({ environment })} />

@@ -48,7 +48,7 @@ export function WorkflowsPage() {
               <span className="muted">{workflow.description}</span>
               <span className="meta">
                 <span className={workflow.enabled ? 'status status-succeeded' : 'status status-cancelled'}>{workflow.enabled ? 'Enabled' : 'Disabled'}</span>
-                <span>Trigger: {triggerTitle(workflow.definition.trigger.type)}</span>
+                <span>{workflow.definition.triggers.length === 0 ? 'Manual only' : `Triggers: ${workflow.definition.triggers.map((trigger) => triggerTitle(trigger.type)).join(', ')}`}</span>
                 <span>{workflow.definition.steps.length} blocks</span>
               </span>
             </a>

@@ -24,11 +24,14 @@ kind: Formula
 metadata:
   name: My workflow          # required, identifies the workflow on import
   description: What it does
-  enabled: true              # disabled workflows ignore their trigger
+  enabled: true              # disabled workflows ignore their triggers
 
-trigger:                     # what starts a run
-  type: clickup
-  with: { mode: poll }
+triggers:                    # what starts a run: any one of these
+  - id: clickup              # optional, defaults to the type
+    type: clickup
+    with: { mode: poll }
+  - id: webhook
+    type: webhook
 
 environment:                 # what the workflow needs around it
   runtimes: [{ name: node, version: "22" }]
@@ -59,7 +62,8 @@ Text settings may contain `{{ path }}` placeholders.
 
 | Placeholder | Value |
 |-------------|-------|
-| `{{trigger...}}` | The trigger payload, e.g. `{{trigger.task.name}}` for ClickUp |
+| `{{trigger...}}` | The payload of the trigger that started the run, e.g. `{{trigger.task.name}}` for ClickUp |
+| `{{triggeredBy.id}}`, `{{triggeredBy.type}}` | Which trigger started the run. Both are `manual` for **Run now** |
 | `{{steps.<id>.output...}}` | Output of an earlier block, e.g. `{{steps.implement.output.result}}` |
 | `{{run.id}}` | Id of the run |
 | `{{repo.branch}}`, `{{repo.baseBranch}}`, `{{repo.owner}}`, `{{repo.name}}` | Set by the clone block |
@@ -73,17 +77,37 @@ Filters prepare a value for where it is used:
 
 ## Triggers
 
+A workflow has a list of triggers, and any of them starts a run. The list may
+be empty: **Run now** in the UI and `POST /api/workflows/:id/run` always work,
+with whatever you send as the payload.
+
+```mermaid
+flowchart LR
+    C[clickup trigger<br/>id: clickup] --> R
+    H[webhook trigger<br/>id: webhook] --> R
+    M[Run now] --> R
+    R[Run<br/>records triggeredBy] --> B[Blocks]
+```
+
+Every trigger has an `id` that is unique in the workflow. It appears in the
+webhook URL of the trigger and in the run report, and blocks can read it as
+`{{triggeredBy.id}}`. Without an `id` the type is used, so give ids when a
+workflow has two triggers of the same type.
+
+All triggers of a workflow feed the same blocks, so their payloads should have
+the fields the blocks use. A webhook that should behave like the ClickUp
+trigger sends `{"task": {"id": "...", "name": "...", "url": "..."}}`.
+
 | Type | Starts a run when | Payload |
 |------|-------------------|---------|
-| `manual` | You press **Run now** | Whatever you send to `POST /api/workflows/:id/run` |
-| `webhook` | `POST /hooks/<workflow id>?secret=<hook secret>` is called | The JSON body |
+| `webhook` | `POST /hooks/<workflow id>/<trigger id>?secret=<hook secret>` is called | The JSON body |
 | `clickup` | A ClickUp task is assigned to you | `task.id`, `task.name`, `task.description`, `task.url`, `task.status` |
 
 ClickUp settings (`with`):
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `mode` | `poll` | `poll` asks ClickUp at an interval and needs no inbound access. `webhook` expects ClickUp to call `/hooks/<workflow id>` |
+| `mode` | `poll` | `poll` asks ClickUp at an interval and needs no inbound access. `webhook` expects ClickUp to call `/hooks/<workflow id>/<trigger id>` |
 | `tokenSecret` | `CLICKUP_TOKEN` | Secret holding your ClickUp API token |
 | `assigneeId` | owner of the token | Whose assignments to watch |
 | `teamId` | first workspace of the token | ClickUp workspace |
@@ -91,7 +115,23 @@ ClickUp settings (`with`):
 | `includeExisting` | `false` | Also run for tasks that were assigned before the workflow was enabled |
 | `webhookSecret` | `CLICKUP_WEBHOOK_SECRET` | Secret holding the signing secret ClickUp returned for the webhook |
 
-A task starts a run at most once per workflow.
+A task starts a run at most once per workflow, also when several triggers of
+the workflow notice it.
+
+### Formulas with a single `trigger`
+
+Formulas written before workflows could have several triggers have one
+`trigger` object instead of the `triggers` list. They still import: the trigger
+becomes a list of one, with its type as id. The former `manual` type becomes
+an empty list. The old webhook URL without a trigger id, `/hooks/<workflow id>`,
+keeps working and calls the first trigger of the workflow that takes webhooks.
+Exports always use `triggers`.
+
+```yaml
+trigger:            # old form, still accepted
+  type: clickup
+  with: { mode: poll }
+```
 
 ## Environment
 

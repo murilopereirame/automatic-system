@@ -58,29 +58,31 @@ setSecret('CLICKUP_WEBHOOK_SECRET', 'signing-secret');
 const noSteps = { environment: emptyEnvironment(), notifications: [], steps: [] };
 
 test('ClickUp polling ignores tasks that were already assigned and fires once for new ones', async () => {
-  const workflow = createWorkflow({ name: 'poller', definition: { ...noSteps, trigger: { type: 'clickup', with: {} } } });
-  const fire = fireFor(workflow.id);
+  const workflow = createWorkflow({ name: 'poller', definition: { ...noSteps, triggers: [{ id: 'mine', type: 'clickup', with: {} }] } });
+  const [trigger] = workflow.definition.triggers;
+  const fire = fireFor(workflow.id, trigger.id);
 
-  await pollOnce(workflow, fire);
+  await pollOnce(workflow, trigger, fire);
   assert.equal(runs.listRuns({ workflowId: workflow.id }).length, 0, 'existing tasks only set the baseline');
 
   assignedTasks.push({ id: 't2', name: 'New task', url: 'https://app.clickup.com/t/t2', assignees: [{ id: 7, username: 'me' }] });
-  await pollOnce(workflow, fire);
-  await pollOnce(workflow, fire);
+  await pollOnce(workflow, trigger, fire);
+  await pollOnce(workflow, trigger, fire);
   await engine.waitForIdle();
 
   const started = runs.listRuns({ workflowId: workflow.id });
   assert.equal(started.length, 1, 'the new task starts exactly one run');
   assert.equal((started[0].context.trigger.task as any).name, 'New task');
+  assert.deepEqual(started[0].context.triggeredBy, { id: 'mine', type: 'clickup' });
   assert.ok(clickup.requests.some((request) => request.url.includes('assignees[]=7') && request.headers.authorization === 'pk_test'));
 });
 
 test('ClickUp webhooks need a valid signature and an assignment to me', async () => {
   const app = await buildServer();
-  const workflow = createWorkflow({ name: 'hooked', definition: { ...noSteps, trigger: { type: 'clickup', with: { mode: 'webhook' } } } });
+  const workflow = createWorkflow({ name: 'hooked', definition: { ...noSteps, triggers: [{ id: 'calls', type: 'webhook', with: {} }, { id: 'tasks', type: 'clickup', with: { mode: 'webhook' } }] } });
   const payload = JSON.stringify({ event: 'taskAssigneeUpdated', task_id: 't9' });
   const post = (signature: string) =>
-    app.inject({ method: 'POST', url: `/hooks/${workflow.id}`, headers: { 'content-type': 'application/json', 'x-signature': signature }, payload });
+    app.inject({ method: 'POST', url: `/hooks/${workflow.id}/tasks`, headers: { 'content-type': 'application/json', 'x-signature': signature }, payload });
 
   assert.equal((await post('forged')).statusCode, 401);
   const signature = createHmac('sha256', 'signing-secret').update(payload).digest('hex');
@@ -95,7 +97,7 @@ test('ClickUp webhooks need a valid signature and an assignment to me', async ()
 test('the fetch block loads comments and subtasks and saves attachments next to the repository', async () => {
   const workflow = createWorkflow({
     name: 'fetcher',
-    definition: { ...noSteps, trigger: { type: 'manual', with: {} }, steps: [{ id: 'task', type: 'clickup_fetch_task', with: { taskId: '{{trigger.task.id}}' } }] },
+    definition: { ...noSteps, triggers: [], steps: [{ id: 'task', type: 'clickup_fetch_task', with: { taskId: '{{trigger.task.id}}' } }] },
   });
   const run = engine.startRun(workflow, { task: { id: 't5' } });
   await engine.waitForIdle();
@@ -134,7 +136,7 @@ test('clone, change, push and open a pull request as the token owner', async () 
   const workflow = createWorkflow({
     name: 'pr-flow',
     definition: {
-      trigger: { type: 'manual', with: {} },
+      triggers: [],
       environment: { ...emptyEnvironment(), env: { GIT_CONFIG_GLOBAL: gitConfig } },
       notifications: [],
       steps: [

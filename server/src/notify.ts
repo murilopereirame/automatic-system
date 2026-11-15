@@ -7,7 +7,7 @@
  *   {{title}} {{message}}        what is being announced
  *   {{run.id}} {{run.url}} {{run.status}}
  *   {{workflow.name}}
- *   {{trigger...}} {{steps.<id>.output...}}   same as in blocks
+ *   {{trigger...}} {{triggeredBy...}} {{steps.<id>.output...}}   same as in blocks
  *   {{secrets.NAME}}             stored secrets, so tokens stay out of the formula
  */
 import { config } from './config.js';
@@ -33,6 +33,7 @@ function templateScope(run: Run, notification: Notification): Record<string, unk
     run: { id: run.id, status: run.status, url: config.publicUrl ? `${config.publicUrl}/#/runs/${run.id}` : '' },
     workflow: { name: run.workflowName },
     trigger: run.context.trigger,
+    triggeredBy: run.context.triggeredBy,
     steps: run.context.steps,
     secrets: Object.fromEntries(listSecretNames().map((name) => [name, getSecret(name)])),
   };

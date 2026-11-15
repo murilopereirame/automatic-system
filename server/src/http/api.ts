@@ -11,7 +11,7 @@ import { deleteSecret, listSecretNames, setSecret } from '../store/secrets.js';
 import { getSettings, saveSettings } from '../store/settings.js';
 import * as workflows from '../store/workflows.js';
 import { stepTypes } from '../steps/index.js';
-import { syncTrigger, triggerTypes } from '../triggers/index.js';
+import { syncTriggers, triggerTypes } from '../triggers/index.js';
 import type { RunEvent, Settings, Workflow } from '../types.js';
 import { requireAuth } from './auth.js';
 
@@ -33,10 +33,10 @@ function workflowInput(body: any): workflows.WorkflowInput {
   };
 }
 
-/** Applies the side effects of a changed workflow: memory files on disk and the trigger watcher. */
+/** Applies the side effects of a changed workflow: memory files on disk and the trigger watchers. */
 async function afterWorkflowChange(workflow: Workflow): Promise<void> {
   await writeMemory(workflow, { overwrite: true });
-  syncTrigger(workflow.id);
+  syncTriggers(workflow.id);
 }
 
 /**
@@ -81,7 +81,7 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
 
   app.delete<IdParams>('/workflows/:id', async (request) => {
     workflows.deleteWorkflow(request.params.id);
-    syncTrigger(request.params.id);
+    syncTriggers(request.params.id);
     return { ok: true };
   });
 

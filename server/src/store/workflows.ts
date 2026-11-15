@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { db, now } from '../db.js';
-import type { Workflow, WorkflowDefinition } from '../types.js';
+import { upgradeDefinition, type Workflow, type WorkflowDefinition } from '../types.js';
 
 interface Row {
   id: string;
@@ -20,7 +20,7 @@ function fromRow(row: Row): Workflow {
     description: row.description,
     enabled: row.enabled === 1,
     hookSecret: row.hook_secret,
-    definition: JSON.parse(row.definition),
+    definition: upgradeDefinition(JSON.parse(row.definition)),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -82,8 +82,4 @@ export function deleteWorkflow(id: string): void {
 export function markSeen(workflowId: string, key: string): boolean {
   const result = db.prepare('INSERT OR IGNORE INTO trigger_seen (workflow_id, key) VALUES (?, ?)').run(workflowId, key);
   return result.changes > 0;
-}
-
-export function hasSeenAnything(workflowId: string): boolean {
-  return db.prepare('SELECT 1 FROM trigger_seen WHERE workflow_id = ? LIMIT 1').get(workflowId) !== undefined;
 }

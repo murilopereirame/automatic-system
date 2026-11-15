@@ -22,15 +22,15 @@ import { getWorkflow } from '../store/workflows.js';
 import { getStepType } from '../steps/index.js';
 import type { StepRuntime } from '../steps/types.js';
 import { renderDeep } from '../template.js';
-import type { Run, StepConfig, Workflow } from '../types.js';
+import { MANUAL_TRIGGER, type Run, type StepConfig, type TriggerRef, type Workflow } from '../types.js';
 
 /** Abort handles of the runs that are executing right now, by run id. */
 const activeRuns = new Map<string, AbortController>();
 
 /** Creates a run for a workflow and starts executing it in the background. */
-export function startRun(workflow: Workflow, trigger: Record<string, unknown>): Run {
-  const run = runs.createRun(workflow, config.workspacesDir, { trigger, steps: {} });
-  runs.addEvent(run.id, null, 'triggered', { trigger: workflow.definition.trigger.type, payload: trigger });
+export function startRun(workflow: Workflow, payload: Record<string, unknown>, triggeredBy: TriggerRef = MANUAL_TRIGGER): Run {
+  const run = runs.createRun(workflow, config.workspacesDir, { trigger: payload, triggeredBy, steps: {} });
+  runs.addEvent(run.id, null, 'triggered', { trigger: triggeredBy.type, triggerId: triggeredBy.id, payload });
   void executeRun(run.id);
   return run;
 }
@@ -97,7 +97,7 @@ async function executeStep(run: Run, workflow: Workflow, step: StepConfig, signa
 function buildRuntime(run: Run, workflow: Workflow, step: StepConfig, signal: AbortSignal): StepRuntime {
   const context = run.context;
   const log = (type: string, data: Record<string, unknown> = {}) => void runs.addEvent(run.id, step.id, type, data);
-  const templateScope = { trigger: context.trigger, steps: context.steps, run: { id: run.id }, repo: context.repo };
+  const templateScope = { trigger: context.trigger, triggeredBy: context.triggeredBy, steps: context.steps, run: { id: run.id }, repo: context.repo };
 
   return {
     run,

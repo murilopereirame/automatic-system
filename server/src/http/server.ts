@@ -2,7 +2,7 @@
 import { existsSync } from 'node:fs';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { config } from '../config.js';
 import { currentAllowList, recordBlocked } from '../egress.js';
 import { HttpError } from '../errors.js';
@@ -55,17 +55,24 @@ export async function buildServer(): Promise<FastifyInstance> {
   app.get('/healthz', async () => ({ ok: true }));
 
   // ---- Webhooks: authenticated by the trigger itself, not by the session ----
-  app.post<{ Params: { id: string }; Querystring: Record<string, string> }>('/hooks/:id', async (request) => {
+  // `/hooks/<workflow id>/<trigger id>` calls one trigger. The short form without a trigger id is the
+  // URL from before workflows could have several triggers; it calls the first trigger that takes webhooks.
+  type HookRoute = { Params: { id: string; triggerId?: string }; Querystring: Record<string, string> };
+  const handleHook = async (request: FastifyRequest<HookRoute>) => {
     const workflow = getWorkflow(request.params.id);
-    const trigger = workflow && getTriggerType(workflow.definition.trigger.type);
-    if (!workflow?.enabled || !trigger?.handleWebhook) throw new HttpError(404, 'No webhook here');
-    await trigger.handleWebhook(
+    const receivers = workflow?.enabled ? workflow.definition.triggers.filter((candidate) => getTriggerType(candidate.type)?.handleWebhook) : [];
+    const trigger = request.params.triggerId ? receivers.find((candidate) => candidate.id === request.params.triggerId) : receivers[0];
+    if (!workflow || !trigger) throw new HttpError(404, 'No webhook here');
+    await getTriggerType(trigger.type)!.handleWebhook!(
       workflow,
+      trigger,
       { headers: request.headers, query: request.query, rawBody: request.rawBody ?? '', body: request.body },
-      fireFor(workflow.id),
+      fireFor(workflow.id, trigger.id),
     );
     return { ok: true };
-  });
+  };
+  app.post<HookRoute>('/hooks/:id', handleHook);
+  app.post<HookRoute>('/hooks/:id/:triggerId', handleHook);
 
   // ---- Gateway sync: the gateway fetches the egress allow list and reports what it blocked ----
   app.post('/internal/egress', async (request) => {

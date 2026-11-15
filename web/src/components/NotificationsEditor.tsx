@@ -34,7 +34,7 @@ export function NotificationsEditor({ notifications, onChange }: Props) {
             <code>{'{{title}}'}</code>, <code>{'{{message}}'}</code>, <code>{'{{run.url}}'}</code>, <code>{'{{run.id}}'}</code>, <code>{'{{workflow.name}}'}</code>
           </li>
           <li>
-            <code>{'{{trigger...}}'}</code> and <code>{'{{steps.<id>.output...}}'}</code>, as in blocks
+            <code>{'{{trigger...}}'}</code>, <code>{'{{triggeredBy.id}}'}</code> and <code>{'{{steps.<id>.output...}}'}</code>, as in blocks
           </li>
           <li>
             <code>{'{{secrets.NAME}}'}</code> for tokens, so they stay out of the formula
