@@ -33,21 +33,43 @@ export function isPrivateAddress(address: string): boolean {
   return v6 === '::1' || v6 === '::' || v6.startsWith('fc') || v6.startsWith('fd') || v6.startsWith('fe80');
 }
 
-/** Decides whether a connection may be made and to which address. Returns undefined to refuse. */
-async function resolveTarget(host: string, request: IncomingMessage, policy: EgressPolicy): Promise<string | undefined> {
+/**
+ * Decides whether a connection may be made and to which addresses. Returns
+ * undefined to refuse. A name can have several addresses (localhost is often
+ * both ::1 and 127.0.0.1), so all of them are checked and returned.
+ */
+async function resolveTarget(host: string, request: IncomingMessage, policy: EgressPolicy): Promise<string[] | undefined> {
   const privileged = policy.privilegedAuthorization !== undefined && request.headers['proxy-authorization'] === policy.privilegedAuthorization;
   const patterns = policy.allowList();
   if (!privileged && !hostMatches(host, patterns)) return undefined;
 
-  let address: string;
+  let addresses: string[];
   try {
-    address = (await lookup(host)).address;
+    addresses = (await lookup(host, { all: true })).map((entry) => entry.address);
   } catch {
     return undefined;
   }
+  if (addresses.length === 0) return undefined;
   const listedByExactName = patterns.some((pattern) => pattern.trim().toLowerCase() === host.toLowerCase());
-  if (!privileged && isPrivateAddress(address) && !listedByExactName) return undefined;
-  return address;
+  if (!privileged && addresses.some(isPrivateAddress) && !listedByExactName) return undefined;
+  return addresses;
+}
+
+/** Connects to the first address that accepts the connection. */
+export async function connectToAny(addresses: string[], port: number): Promise<net.Socket> {
+  let failure: unknown;
+  for (const address of addresses) {
+    try {
+      return await new Promise<net.Socket>((resolve, reject) => {
+        const socket = net.connect(port, address);
+        socket.once('connect', () => resolve(socket.off('error', reject)));
+        socket.once('error', reject);
+      });
+    } catch (reason) {
+      failure = reason;
+    }
+  }
+  throw failure;
 }
 
 function splitHostPort(target: string, defaultPort: number): { host: string; port: number } {
@@ -64,20 +86,25 @@ export function createEgressProxy(policy: EgressPolicy): http.Server {
   server.on('connect', async (request, client, head) => {
     client.on('error', () => {});
     const { host, port } = splitHostPort(request.url ?? '', 443);
-    const address = await resolveTarget(host, request, policy);
-    if (!address) {
+    const addresses = await resolveTarget(host, request, policy);
+    if (!addresses) {
       policy.onBlocked?.(host);
       client.end(`HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n${REFUSAL}\n`);
       return;
     }
-    const upstream = net.connect(port, address, () => {
-      client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-      upstream.write(head);
-      upstream.pipe(client);
-      client.pipe(upstream);
-    });
-    upstream.on('error', () => client.end('HTTP/1.1 502 Bad Gateway\r\n\r\n'));
+    let upstream: net.Socket;
+    try {
+      upstream = await connectToAny(addresses, port);
+    } catch {
+      client.end('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+      return;
+    }
+    upstream.on('error', () => client.destroy());
     client.on('close', () => upstream.destroy());
+    client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+    upstream.write(head);
+    upstream.pipe(client);
+    client.pipe(upstream);
   });
 
   // Plain HTTP: "GET http://host/path".
@@ -89,21 +116,28 @@ export function createEgressProxy(policy: EgressPolicy): http.Server {
       response.writeHead(400).end('This is a forward proxy.\n');
       return;
     }
-    const address = await resolveTarget(url.hostname, request, policy);
-    if (!address) {
+    const addresses = await resolveTarget(url.hostname, request, policy);
+    if (!addresses) {
       policy.onBlocked?.(url.hostname);
       response.writeHead(403, { 'Content-Type': 'text/plain' }).end(`${REFUSAL}\n`);
       return;
     }
+    let socket: net.Socket;
+    try {
+      socket = await connectToAny(addresses, Number(url.port || 80));
+    } catch {
+      response.writeHead(502).end();
+      return;
+    }
     const { 'proxy-authorization': _credentials, 'proxy-connection': _connection, ...headers } = request.headers;
     const upstream = http.request(
-      { host: address, port: url.port || 80, method: request.method, path: `${url.pathname}${url.search}`, headers: { ...headers, host: url.host } },
+      { createConnection: () => socket, method: request.method, path: `${url.pathname}${url.search}`, headers: { ...headers, host: url.host, connection: 'close' } },
       (answer) => {
         response.writeHead(answer.statusCode ?? 502, answer.headers);
         answer.pipe(response);
       },
     );
-    upstream.on('error', () => response.writeHead(502).end());
+    upstream.on('error', () => (response.headersSent ? response.destroy() : response.writeHead(502).end()));
     request.pipe(upstream);
   });
 

@@ -12,7 +12,7 @@ process.env.AUTOWORKER_EGRESS_PROXY = 'http://gateway:3128';
 
 const { recentlyBlocked } = await import('../src/egress.js');
 const { hostMatches } = await import('../src/gateway/hosts.js');
-const { createEgressProxy, isPrivateAddress } = await import('../src/gateway/proxy.js');
+const { connectToAny, createEgressProxy, isPrivateAddress } = await import('../src/gateway/proxy.js');
 const { createWorkflow } = await import('../src/store/workflows.js');
 const { buildServer } = await import('../src/http/server.js');
 const engine = await import('../src/engine/engine.js');
@@ -83,6 +83,14 @@ test('the proxy refuses hosts that are not on the allow list and reports them', 
   assert.match(refused.body, /egress allow list/);
   assert.equal(await connectVia('localhost'), 'HTTP/1.1 403 Forbidden');
   assert.deepEqual(blocked, ['localhost', 'localhost']);
+});
+
+test('a host with several addresses is reached on the one that answers', async () => {
+  // On many machines localhost is ::1 first, while the target only listens on IPv4.
+  const socket = await connectToAny(['::1', '127.0.0.1'], port(target));
+  assert.equal(socket.remoteAddress, '127.0.0.1');
+  socket.destroy();
+  await assert.rejects(connectToAny(['127.0.0.1'], 1));
 });
 
 test('an exactly listed host is reachable, by plain HTTP and by tunnel', async () => {
