@@ -12,9 +12,20 @@ export interface FieldSpec {
 }
 
 export interface TriggerConfig {
+  /** Unique within the workflow. Names the trigger in webhook URLs and run reports. */
+  id: string;
   type: string;
   with: Record<string, unknown>;
 }
+
+/** Identifies the trigger that started a run. */
+export interface TriggerRef {
+  id: string;
+  type: string;
+}
+
+/** What "Run now" and `POST /api/workflows/:id/run` record as the trigger of a run. */
+export const MANUAL_TRIGGER: TriggerRef = { id: 'manual', type: 'manual' };
 
 export interface StepConfig {
   id: string;
@@ -100,7 +111,8 @@ export interface NotificationWebhook {
 }
 
 export interface WorkflowDefinition {
-  trigger: TriggerConfig;
+  /** Any of these starts a run. Empty means runs only start from "Run now". */
+  triggers: TriggerConfig[];
   environment: Environment;
   notifications: NotificationWebhook[];
   steps: StepConfig[];
@@ -122,7 +134,10 @@ export type RunStatus = 'queued' | 'running' | 'waiting' | 'succeeded' | 'failed
 
 /** Mutable state carried from step to step. Templates read from it. */
 export interface RunContext {
+  /** The payload of the trigger that started the run. */
   trigger: Record<string, unknown>;
+  /** Which trigger started the run. Missing on runs from before workflows could have several triggers. */
+  triggeredBy?: TriggerRef;
   steps: Record<string, { output: unknown }>;
   /** Directory later steps run in. Set by the "Clone repository" step. */
   workdir?: string;
@@ -175,4 +190,17 @@ export interface Settings {
 
 export function emptyEnvironment(): Environment {
   return { runtimes: [], mcpServers: {}, memory: [], skills: [], services: [], network: { allow: [] }, env: {}, secrets: [], mounts: [] };
+}
+
+/**
+ * Definitions stored before a workflow could have several triggers hold one
+ * `trigger` instead of the `triggers` list. This brings them to today's shape:
+ * the single trigger keeps its type as id, and the old `manual` type, which
+ * only meant "no trigger", becomes an empty list.
+ */
+export function upgradeDefinition(stored: WorkflowDefinition & { trigger?: Omit<TriggerConfig, 'id'> }): WorkflowDefinition {
+  if (stored.triggers) return stored;
+  const { trigger, ...rest } = stored;
+  const triggers = trigger && trigger.type !== 'manual' ? [{ id: trigger.type, type: trigger.type, with: trigger.with ?? {} }] : [];
+  return { ...rest, triggers };
 }

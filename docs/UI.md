@@ -30,8 +30,11 @@ flowchart LR
 
 ![Block editor](images/editor.png)
 
-- **Blocks**: the trigger on top, then the blocks in the order they run. Use
-  the `+` between blocks to insert one, drag a block or use the arrows to
+- **Blocks**: the triggers on top, then the blocks in the order they run. Any
+  trigger starts a run. **+ Add trigger** adds one, also a second of the same
+  type; click a trigger to edit its settings. Triggers that are called from
+  outside show their own URL. Without triggers, runs start only from **Run now**.
+  Use the `+` between blocks to insert one, drag a block or use the arrows to
   reorder, click a block to edit its settings.
 - **Environment**: runtimes, environment variables, which secrets Claude may
   see, Claude memory files, MCP servers and expected volume mounts.

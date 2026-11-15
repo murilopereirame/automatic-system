@@ -75,7 +75,7 @@ it, so a new block needs no UI change.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> queued: trigger fires
+    [*] --> queued: any trigger fires
     queued --> running
     running --> waiting: approval block
     waiting --> running: approved (next block)
@@ -87,6 +87,23 @@ stateDiagram-v2
     failed --> running: retry
     cancelled --> running: retry
     succeeded --> [*]
+```
+
+A workflow can have several triggers. The trigger manager keeps one watcher
+per trigger and every trigger has its own webhook URL. Whichever fires first
+starts the run, and the run records it as `triggeredBy`.
+
+```mermaid
+flowchart LR
+    subgraph Workflow
+        T1[Trigger: clickup<br/>poll watcher]
+        T2[Trigger: webhook<br/>/hooks/workflow/webhook]
+    end
+    T1 -- fire --> D{Seen this item<br/>before?}
+    T2 -- fire --> D
+    N[Run now] --> S
+    D -- no --> S[startRun<br/>triggeredBy = id and type]
+    D -- yes --> X[ignored]
 ```
 
 `run.stepIndex` always points at the block that is running, waiting or that

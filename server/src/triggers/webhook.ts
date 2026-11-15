@@ -12,9 +12,9 @@ export function safeEqual(a: string, b: string): boolean {
 export const webhookTrigger: TriggerType = {
   type: 'webhook',
   title: 'Webhook',
-  description: 'Starts a run when the workflow URL receives a POST request. The JSON body is available as {{trigger...}}.',
+  description: 'Starts a run when the URL of this trigger receives a POST request. The JSON body is available as {{trigger...}}.',
   fields: [],
-  handleWebhook(workflow, request, fire) {
+  handleWebhook(workflow, _trigger, request, fire) {
     const presented = request.query.secret ?? String(request.headers['x-autoworker-secret'] ?? '');
     if (!safeEqual(presented, workflow.hookSecret)) throw new HttpError(401, 'Wrong webhook secret');
     const body = request.body !== null && typeof request.body === 'object' ? (request.body as Record<string, unknown>) : { body: request.body };

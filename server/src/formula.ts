@@ -1,7 +1,7 @@
 /**
  * Formulas: the portable YAML form of a workflow.
  *
- * A formula contains the trigger, the blocks and the whole environment
+ * A formula contains the triggers, the blocks and the whole environment
  * (runtimes, MCP servers, Claude memory, environment variables, mounts) and
  * the notification webhooks.
  * Secret values are never part of a formula, only their names.
@@ -11,7 +11,7 @@ import { HttpError } from './errors.js';
 import { getStepType } from './steps/index.js';
 import type { WorkflowInput } from './store/workflows.js';
 import { getTriggerType } from './triggers/index.js';
-import { emptyEnvironment, type Environment, type MemoryFile, type NotificationWebhook, type SkillSpec, type StepConfig, type Workflow, type WorkflowDefinition } from './types.js';
+import { emptyEnvironment, type Environment, type MemoryFile, type NotificationWebhook, type SkillSpec, type StepConfig, type TriggerConfig, type Workflow, type WorkflowDefinition } from './types.js';
 
 export const FORMULA_API_VERSION = 'autoworker/v1';
 
@@ -102,14 +102,34 @@ function parseSteps(input: unknown): StepConfig[] {
   });
 }
 
+/**
+ * Reads the `triggers` list. Formulas written before a workflow could have
+ * several triggers have a single `trigger` object instead, which is read as a
+ * list of one. The old `manual` type is dropped: "Run now" always works.
+ */
+function parseTriggers(raw: Record<string, unknown>): TriggerConfig[] {
+  const items = raw.triggers !== undefined ? asArray(raw.triggers, 'triggers') : raw.trigger ? [raw.trigger] : [];
+  const triggers: TriggerConfig[] = [];
+  const ids = new Set<string>();
+  for (const item of items) {
+    const trigger = asObject(item, 'a trigger');
+    const type = String(trigger.type ?? 'manual');
+    if (type === 'manual') continue;
+    if (!getTriggerType(type)) invalid(`unknown trigger type "${type}"`);
+    const id = String(trigger.id ?? (ids.has(type) ? `${type}_${triggers.length + 1}` : type));
+    if (!/^[\w-]+$/.test(id)) invalid(`trigger id "${id}" may only contain letters, digits, "_" and "-"`);
+    if (ids.has(id)) invalid(`trigger id "${id}" is used more than once`);
+    ids.add(id);
+    triggers.push({ id, type, with: asObject(trigger.with, `settings of trigger "${id}"`) });
+  }
+  return triggers;
+}
+
 /** Validates untrusted input (API body or parsed YAML) and returns a clean definition. */
 export function parseDefinition(input: unknown): WorkflowDefinition {
   const raw = asObject(input, 'the workflow');
-  const trigger = asObject(raw.trigger, 'trigger');
-  const triggerType = String(trigger.type ?? 'manual');
-  if (!getTriggerType(triggerType)) invalid(`unknown trigger type "${triggerType}"`);
   return {
-    trigger: { type: triggerType, with: asObject(trigger.with, 'trigger settings') },
+    triggers: parseTriggers(raw),
     environment: parseEnvironment(raw.environment),
     notifications: parseNotifications(raw.notifications),
     steps: parseSteps(raw.steps),
@@ -140,12 +160,12 @@ export function parseFormula(source: string): WorkflowInput {
 
 /** Serialises a workflow as a formula. `snapshot` lets the caller pass memory and skills as they are on disk right now. */
 export function toFormula(workflow: Workflow, snapshot: { memory?: MemoryFile[]; skills?: SkillSpec[] } = {}): string {
-  const { trigger, environment, notifications, steps } = workflow.definition;
+  const { triggers, environment, notifications, steps } = workflow.definition;
   const document = {
     apiVersion: FORMULA_API_VERSION,
     kind: 'Formula',
     metadata: { name: workflow.name, description: workflow.description, enabled: workflow.enabled },
-    trigger,
+    triggers,
     environment: { ...environment, memory: snapshot.memory ?? environment.memory, skills: snapshot.skills ?? environment.skills },
     notifications,
     steps,

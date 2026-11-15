@@ -1,7 +1,8 @@
 /**
- * The block editor: the trigger on top, then the blocks in the order they
- * run. Blocks can be added between any two blocks, reordered by dragging or
- * with the arrow buttons, and expanded to edit their settings.
+ * The block editor: the triggers on top, then the blocks in the order they
+ * run. Any trigger starts a run. Blocks can be added between any two blocks,
+ * reordered by dragging or with the arrow buttons, and expanded to edit their
+ * settings.
  */
 import { useState } from 'react';
 import type { BlockType, Meta, StepConfig, TriggerConfig } from '../api.ts';
@@ -9,10 +10,12 @@ import { FieldInput } from './FieldInput.tsx';
 
 interface Props {
   meta: Meta;
-  trigger: TriggerConfig;
+  triggers: TriggerConfig[];
   steps: StepConfig[];
   secretNames: string[];
-  onTriggerChange: (trigger: TriggerConfig) => void;
+  /** What webhook URLs are built from. Missing until the workflow has been saved once. */
+  hooks?: { workflowId: string; secret: string };
+  onTriggersChange: (triggers: TriggerConfig[]) => void;
   onStepsChange: (steps: StepConfig[]) => void;
 }
 
@@ -22,18 +25,35 @@ function defaultSettings(type: BlockType): Record<string, unknown> {
   return Object.fromEntries(withDefaults);
 }
 
-function uniqueId(type: string, steps: StepConfig[]): string {
-  const taken = new Set(steps.map((step) => step.id));
+function uniqueId(type: string, existing: { id: string }[]): string {
+  const taken = new Set(existing.map((item) => item.id));
   if (!taken.has(type)) return type;
   for (let counter = 2; ; counter += 1) {
     if (!taken.has(`${type}_${counter}`)) return `${type}_${counter}`;
   }
 }
 
-export function BlockPipeline({ meta, trigger, steps, secretNames, onTriggerChange, onStepsChange }: Props) {
+/** Only triggers that are called from outside have a URL. Every trigger has its own, ending in its id. */
+function hookUrl(trigger: TriggerConfig, hooks: NonNullable<Props['hooks']>): string | undefined {
+  const url = `${window.location.origin}/hooks/${hooks.workflowId}/${trigger.id}`;
+  if (trigger.type === 'webhook') return `${url}?secret=${hooks.secret}`;
+  if (trigger.type === 'clickup' && trigger.with.mode === 'webhook') return url;
+  return undefined;
+}
+
+export function BlockPipeline({ meta, triggers, steps, secretNames, hooks, onTriggersChange, onStepsChange }: Props) {
   const [openId, setOpenId] = useState<string>();
   const [draggedIndex, setDraggedIndex] = useState<number>();
-  const triggerType = meta.triggerTypes.find((candidate) => candidate.type === trigger.type);
+
+  // Triggers and blocks share `openId`, so trigger ids get a prefix to keep them apart from block ids.
+  const triggerKey = (trigger: TriggerConfig) => `trigger:${trigger.id}`;
+  const addTrigger = (type: BlockType) => {
+    const trigger: TriggerConfig = { id: uniqueId(type.type, triggers), type: type.type, with: defaultSettings(type) };
+    onTriggersChange([...triggers, trigger]);
+    setOpenId(triggerKey(trigger));
+  };
+  const updateTrigger = (index: number, settings: Record<string, unknown>) => onTriggersChange(triggers.map((trigger, at) => (at === index ? { ...trigger, with: settings } : trigger)));
+  const removeTrigger = (index: number) => onTriggersChange(triggers.filter((_, at) => at !== index));
 
   const insert = (index: number, type: BlockType) => {
     const step: StepConfig = { id: uniqueId(type.type, steps), type: type.type, name: type.title, with: defaultSettings(type) };
@@ -51,31 +71,57 @@ export function BlockPipeline({ meta, trigger, steps, secretNames, onTriggerChan
 
   return (
     <div className="pipeline">
-      <section className="block trigger-block">
-        <header>
-          <span className="block-kind">Trigger</span>
-          <select value={trigger.type} onChange={(event) => onTriggerChange({ type: event.target.value, with: {} })}>
-            {meta.triggerTypes.map((type) => (
-              <option key={type.type} value={type.type}>
-                {type.title}
-              </option>
-            ))}
-          </select>
-        </header>
-        <p className="muted">{triggerType?.description}</p>
-        <div className="block-fields">
-          {triggerType?.fields.map((field) => (
-            <FieldInput
-              key={field.key}
-              field={field}
-              value={trigger.with[field.key]}
-              secretNames={secretNames}
-              earlierSteps={[]}
-              onChange={(value) => onTriggerChange({ ...trigger, with: { ...trigger.with, [field.key]: value } })}
-            />
-          ))}
-        </div>
-      </section>
+      {triggers.length === 0 && (
+        <section className="block trigger-block">
+          <header>
+            <span className="block-kind">Trigger</span>
+            <span className="muted">None. Runs start only when you press "Run now".</span>
+          </header>
+        </section>
+      )}
+      {triggers.map((trigger, index) => {
+        const type = meta.triggerTypes.find((candidate) => candidate.type === trigger.type);
+        const url = hooks && hookUrl(trigger, hooks);
+        const open = openId === triggerKey(trigger);
+        return (
+          <section key={trigger.id} className={`block trigger-block${open ? ' open' : ''}`}>
+            <header onClick={() => setOpenId(open ? undefined : triggerKey(trigger))}>
+              <span className="block-kind">{index === 0 ? 'Trigger' : 'Or trigger'}</span>
+              <span className="block-title">
+                <strong>{type?.title ?? `Unknown trigger type "${trigger.type}"`}</strong>
+                <span className="muted">
+                  <code>{trigger.id}</code>
+                </span>
+              </span>
+              <button className="ghost danger" onClick={(event) => (event.stopPropagation(), removeTrigger(index))}>
+                Remove
+              </button>
+            </header>
+            {url && (
+              <p className="muted">
+                URL of this trigger: <code>{url}</code>
+              </p>
+            )}
+            {!hooks && trigger.type === 'webhook' && <p className="muted">Save the workflow to see the URL of this trigger.</p>}
+            {open && (
+              <div className="block-fields">
+                <p className="muted">{type?.description}</p>
+                {type?.fields.map((field) => (
+                  <FieldInput
+                    key={field.key}
+                    field={field}
+                    value={trigger.with[field.key]}
+                    secretNames={secretNames}
+                    earlierSteps={[]}
+                    onChange={(value) => updateTrigger(index, { ...trigger.with, [field.key]: value })}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      })}
+      <AddBlock types={meta.triggerTypes} onAdd={addTrigger} label="+ Add trigger" />
 
       <AddBlock types={meta.stepTypes} onAdd={(type) => insert(0, type)} />
 
@@ -150,13 +196,13 @@ export function BlockPipeline({ meta, trigger, steps, secretNames, onTriggerChan
   );
 }
 
-/** The connector between two blocks, with a menu to insert a new block there. */
-function AddBlock({ types, onAdd }: { types: BlockType[]; onAdd: (type: BlockType) => void }) {
+/** The connector between two blocks, with a menu to insert a new block there. With a `label` it adds a trigger instead. */
+function AddBlock({ types, onAdd, label }: { types: BlockType[]; onAdd: (type: BlockType) => void; label?: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="connector">
-      <button className="add-block" onClick={() => setOpen(!open)} title="Add a block here">
-        +
+      <button className={label ? 'add-block add-trigger' : 'add-block'} onClick={() => setOpen(!open)} title={label ? undefined : 'Add a block here'}>
+        {label ?? '+'}
       </button>
       {open && (
         <div className="palette">

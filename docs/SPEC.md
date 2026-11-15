@@ -9,7 +9,7 @@ steps that matter.
 | # | Requirement | How it is met |
 |---|-------------|---------------|
 | 1 | A container that ships Claude Code and keeps it from reaching the host or other containers | Hardened image, Claude runs as a separate unprivileged user, internal network with an allow-list gateway. See [SECURITY.md](SECURITY.md) |
-| 2 | Workflows start from triggers, for example a ClickUp task assigned to me | Trigger types: ClickUp (poll or webhook), generic webhook, manual |
+| 2 | Workflows start from triggers, for example a ClickUp task assigned to me | A workflow has any number of triggers: ClickUp (poll or webhook) and generic webhook. **Run now** always works |
 | 3 | Workflows are built from configurable steps, in the UI or in code | Blocks in the web editor, or a YAML formula. Both are the same data, so imported code shows up as blocks |
 | 4 | A workflow can be exported and imported again after a redeploy | The **formula**: one YAML file with trigger, blocks, runtimes, MCP servers, Claude memory and skills, service containers, network allow list, environment variables, mounts and notification webhooks |
 | 5 | The UI reports what happens | Every run has a live event log: trigger, Claude messages and tool calls, commands, test results, notifications, approvals |
@@ -23,7 +23,7 @@ steps that matter.
 
 ```mermaid
 flowchart LR
-    T[Trigger] -->|starts| R[Run]
+    T[Triggers] -->|any one starts| R[Run]
     W[Workflow] -->|defines| R
     W --- F[(Formula YAML)]
     R --> S1[Block 1] --> S2[Block 2] --> S3[...]
@@ -32,7 +32,7 @@ flowchart LR
     R --> E[(Event log)]
 ```
 
-- **Workflow**: a trigger, an ordered list of blocks, an environment and notification webhooks.
+- **Workflow**: one or more triggers, an ordered list of blocks, an environment and notification webhooks.
 - **Formula**: the portable YAML form of a workflow. See [FORMULA.md](FORMULA.md).
 - **Block** (step): one unit of work, such as "Run Claude" or "Wait for approval".
 - **Run**: one execution of a workflow, with its own workspace directory and event log.

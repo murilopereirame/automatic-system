@@ -14,11 +14,17 @@ metadata:
   description: Implements ClickUp tasks assigned to me and opens a pull request after my approval.
   enabled: false
 
-trigger:
-  type: clickup
-  with:
-    mode: poll
-    pollSeconds: 60
+# Any of these starts a run. "Run now" in the UI always works as well.
+triggers:
+  - id: clickup
+    type: clickup
+    with:
+      mode: poll
+      pollSeconds: 60
+  # Lets other systems start the same workflow: POST /hooks/<workflow id>/webhook?secret=<hook secret>
+  # with a JSON body shaped like the ClickUp payload, e.g. {"task": {"id": "...", "name": "...", "url": "..."}}.
+  - id: webhook
+    type: webhook
 
 environment:
   runtimes:

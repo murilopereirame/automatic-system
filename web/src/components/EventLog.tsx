@@ -32,7 +32,7 @@ function describe(event: RunEvent): { label: string; tone?: string; body: ReactN
   const data = event.data as Record<string, any>;
   switch (event.type) {
     case 'triggered':
-      return { label: 'Triggered', body: <Collapsible summary={`by ${data.trigger}`}><pre>{json(data.payload)}</pre></Collapsible> };
+      return { label: 'Triggered', body: <Collapsible summary={data.triggerId && data.triggerId !== data.trigger ? `by ${data.triggerId} (${data.trigger})` : `by ${data.trigger}`}><pre>{json(data.payload)}</pre></Collapsible> };
     case 'step_started':
       return { label: 'Block started', tone: 'heading', body: data.name };
     case 'step_finished':

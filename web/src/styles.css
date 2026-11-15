@@ -505,15 +505,11 @@ input[type='checkbox'] {
 
 .trigger-block {
   border-left-color: var(--accent);
-  padding-bottom: 4px;
-}
-
-.trigger-block > header {
-  cursor: default;
 }
 
 .trigger-block > .muted {
   padding: 0 12px;
+  overflow-wrap: anywhere;
 }
 
 .block-kind {
@@ -569,11 +565,6 @@ input[type='checkbox'] {
   padding-top: 12px;
 }
 
-.trigger-block .block-fields {
-  border-top: none;
-  padding-top: 0;
-}
-
 .connector {
   position: relative;
   height: 36px;
@@ -598,6 +589,18 @@ input[type='checkbox'] {
   border-radius: 50%;
   line-height: 1;
   color: var(--muted);
+}
+
+.add-trigger {
+  width: auto;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.trigger-block + .trigger-block {
+  margin-top: 8px;
 }
 
 .palette {

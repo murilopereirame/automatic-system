@@ -26,7 +26,7 @@ flowchart LR
 
 - **Workflows as blocks.** Build them in the web UI or write them as YAML. Both are the same data.
 - **Formulas.** Export a workflow with everything it needs (runtimes, MCP servers, Claude memory and skills, service containers, network allow list, environment variables, mounts, notification webhooks) and import it again after a redeploy.
-- **Triggers.** ClickUp task assigned to you (poll or webhook), generic webhook, manual.
+- **Triggers.** ClickUp task assigned to you (poll or webhook) and generic webhook. A workflow can have several, and "Run now" always works.
 - **Human in the loop.** Approval blocks pause a run. Reject with a comment and Claude reworks it.
 - **Full visibility.** Every run has a live log: trigger, Claude messages and tool calls, commands, test results, notifications, approvals.
 - **A shell next to Claude.** Open a terminal in the run's workspace, as the same user Claude runs as.
