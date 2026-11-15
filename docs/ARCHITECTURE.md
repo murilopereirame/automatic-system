@@ -63,6 +63,7 @@ flowchart TB
 | `server/src/notify.ts` | Notification webhooks |
 | `server/src/http/` | Server setup, authentication, JSON API, web shell |
 | `server/test/` | Tests. External services are replaced by local stand-ins |
+| `web/src/` | The React web UI, see [UI.md](UI.md) |
 
 Block types and trigger types describe their own settings (`fields`). The UI
 asks the API for this catalogue (`GET /api/meta`) and renders the forms from

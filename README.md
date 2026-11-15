@@ -38,6 +38,7 @@ flowchart LR
 |----------|---------|
 | [docs/SPEC.md](docs/SPEC.md) | Requirements, concepts and milestones |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components, run life cycle, data model, with diagrams |
+| [docs/UI.md](docs/UI.md) | The web UI: pages, editor, run view, with screenshots |
 | [docs/FORMULA.md](docs/FORMULA.md) | Formula reference: triggers, environment, notifications, blocks, templates |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Local setup, configuration, tests, adding blocks and triggers, API overview |
 
@@ -45,10 +46,13 @@ flowchart LR
 
 ```bash
 npm install
-AUTOWORKER_TOKEN=change-me npm run dev
+npm run build
+AUTOWORKER_TOKEN=change-me npm start
 ```
 
-The API listens on http://localhost:8080. See
+Open http://localhost:8080 and sign in with the token. Import
+`examples/clickup-to-pr.formula.yaml` on the Workflows page to see a complete
+workflow as blocks. See
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for details.
 
 ## Status

@@ -4,12 +4,14 @@
   "version": "0.1.0",
   "description": "Containerised Claude Code workflow runner with a block-based web UI",
   "workspaces": [
-    "server"
+    "server",
+    "web"
   ],
   "scripts": {
     "dev": "npm run dev -w server",
-    "build": "npm run build -w server",
-    "typecheck": "npm run typecheck -w server",
+    "dev:web": "npm run dev -w web",
+    "build": "npm run build -w web && npm run build -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
     "test": "npm test -w server",
     "start": "npm start -w server"
   },

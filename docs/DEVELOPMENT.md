@@ -8,6 +8,7 @@ terminal library (`node-pty`).
 ```bash
 npm install
 npm run dev          # API on http://localhost:8080, restarts on change
+npm run dev:web      # web UI on http://localhost:5173 with hot reload
 npm test             # run the test suite
 npm run typecheck
 ```
