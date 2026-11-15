@@ -15,8 +15,10 @@ docker compose up -d
 
 Open http://localhost:8080 and sign in with `AUTOWORKER_TOKEN`.
 
-`docker compose up -d` pulls the published image. To build it from the
-checkout instead, run `docker compose up -d --build`.
+`docker compose up -d` pulls the published image. It is published for
+`linux/amd64` and `linux/arm64` (Apple Silicon, Raspberry Pi, ARM servers), and
+Docker picks the one that matches the host. To build it from the checkout
+instead, run `docker compose up -d --build`.
 
 This starts two containers: `autoworker` (the app and the sandbox, on an
 internal network) and `gateway` (the web UI port and the allow-list proxy for
@@ -147,13 +149,20 @@ sandbox.
 ```mermaid
 flowchart LR
     PR[Pull request] --> T[Typecheck, test, build]
-    PR --> I[Build image]
+    PR --> I[Build image<br/>amd64 and arm64]
     I --> S[Start with compose.yaml]
     S --> K[Smoke test the sandbox]
     M[Push to main] --> T
     M --> I
-    K -->|only on main| P[Publish to ghcr.io]
+    K -->|only on main| A[Push one image<br/>per architecture]
+    A --> P[Publish both under<br/>one tag on ghcr.io]
+    T -->|only on main| P
 ```
 
-To block merging on failures, mark both jobs as required status checks in the
-branch protection rules of `main`.
+The image job runs twice, once on an amd64 runner and once on an arm64 runner,
+so each image is built and smoke-tested on real hardware of its kind. On
+`main`, the `publish` job joins the two images under `latest` and the commit
+SHA, and only runs when the tests and both image jobs passed.
+
+To block merging on failures, mark the test job and both image jobs as required
+status checks in the branch protection rules of `main`.
