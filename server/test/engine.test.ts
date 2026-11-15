@@ -108,6 +108,69 @@ test('rejecting without a go-back step cancels the run', async () => {
   assert.equal(runs.getRun(run.id)!.status, 'cancelled');
 });
 
+const skipped = (run: { id: string }) => runs.listEvents(run.id).filter((event) => event.type === 'step_skipped').map((event) => event.stepId);
+
+test('a block whose "if" is false is skipped, and later blocks see that it has no output', async () => {
+  const workflow = workflowWith([
+    { id: 'urgent', type: 'shell', if: "trigger.task.priority == 'urgent'", with: { command: 'echo urgent' } },
+    { id: 'always', type: 'shell', if: 'previous.skipped && isEmpty(steps.urgent.output)', with: { command: 'echo "was {{= previous.skipped ? \'skipped\' : \'run\' }}"' } },
+  ]);
+  const calm = await runToRest(workflow, { task: { priority: 'low' } });
+  assert.equal(calm.status, 'succeeded');
+  assert.deepEqual(calm.context.steps.urgent, { output: null, skipped: true });
+  assert.match((calm.context.steps.always.output as any).output, /was skipped/);
+  assert.deepEqual(skipped(calm), ['urgent']);
+
+  const urgent = await runToRest(workflow, { task: { priority: 'urgent' } });
+  assert.match((urgent.context.steps.urgent.output as any).output, /urgent/);
+  assert.deepEqual(skipped(urgent), ['always']);
+});
+
+test('a condition block branches on the output of an earlier block', async () => {
+  const workflow = workflowWith([
+    { id: 'tests', type: 'shell', with: { command: 'exit {{trigger.code}}', continueOnError: true } },
+    { id: 'passed', type: 'condition', with: { expression: 'steps.tests.output.exitCode == 0', else: 'report' } },
+    { id: 'celebrate', type: 'shell', with: { command: 'echo yay' } },
+    { id: 'stop', type: 'condition', with: { expression: 'true', then: '$end' } },
+    { id: 'report', type: 'shell', with: { command: 'echo "failed with {{steps.tests.output.exitCode}}"' } },
+  ]);
+
+  const green = await runToRest(workflow, { code: 0 });
+  assert.equal(green.status, 'succeeded');
+  assert.deepEqual(green.context.steps.passed.output, { result: true, branch: 'then', goTo: null });
+  assert.deepEqual(skipped(green), ['report'], 'the else branch is passed over when the run ends early');
+  assert.equal(green.stepIndex, 5);
+
+  const red = await runToRest(workflow, { code: 3 });
+  assert.equal(red.status, 'succeeded');
+  assert.deepEqual(red.context.steps.passed.output, { result: false, branch: 'else', goTo: 'report' });
+  assert.deepEqual(skipped(red), ['celebrate', 'stop']);
+  assert.match((red.context.steps.report.output as any).output, /failed with 3/);
+  const [event] = runs.listEvents(red.id).filter((candidate) => candidate.type === 'condition');
+  assert.deepEqual(event.data, { expression: 'steps.tests.output.exitCode == 0', result: false, goTo: 'report' });
+});
+
+test('a condition can send the run back, but only a limited number of times', async () => {
+  const attempts = (limit: number): StepConfig[] => [
+    { id: 'try', type: 'shell', with: { command: `echo x >> tries.txt; test $(wc -l < tries.txt) -ge ${limit}`, continueOnError: true } },
+    { id: 'again', type: 'condition', with: { expression: 'previous.output.passed', else: 'try', maxRepeats: 2 } },
+  ];
+  const third = await runToRest(workflowWith(attempts(3)));
+  assert.equal(third.status, 'succeeded', 'two repeats are enough to get to the third try');
+  assert.equal(readFileSync(path.join(third.workspace, 'tries.txt'), 'utf8'), 'x\nx\nx\n');
+
+  const never = await runToRest(workflowWith(attempts(9)));
+  assert.equal(never.status, 'failed');
+  assert.match(never.error!, /already went back 2 times/);
+  assert.equal(readFileSync(path.join(never.workspace, 'tries.txt'), 'utf8'), 'x\nx\nx\n');
+});
+
+test('a condition that cannot be evaluated fails the run at that block', async () => {
+  const run = await runToRest(workflowWith([{ id: 'broken', type: 'shell', if: "'abc' * 2", with: { command: 'echo no' } }]));
+  assert.equal(run.status, 'failed');
+  assert.match(run.error!, /needs numbers/);
+});
+
 test('cancelling stops a running command', async () => {
   const workflow = workflowWith([{ id: 'slow', type: 'shell', with: { command: 'sleep 30' } }]);
   const run = engine.startRun(workflow, {});

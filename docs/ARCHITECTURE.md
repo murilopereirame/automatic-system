@@ -56,6 +56,7 @@ flowchart TB
 | `server/src/db.ts`, `store/` | SQLite schema and one small module per table group |
 | `server/src/formula.ts` | Validation of workflow definitions, YAML import and export |
 | `server/src/template.ts` | `{{ value }}` templating |
+| `server/src/expression.ts` | The expression language of conditions: parser and interpreter, no `eval`. See [EXPRESSIONS.md](EXPRESSIONS.md) |
 | `server/src/engine/engine.ts` | The run state machine |
 | `server/src/steps/` | One file per block type, registered in `steps/index.ts` |
 | `server/src/triggers/` | One file per trigger type, plus the manager in `triggers/index.ts` |
@@ -104,6 +105,19 @@ flowchart LR
     N[Run now] --> S
     D -- no --> S[startRun<br/>triggeredBy = id and type]
     D -- yes --> X[ignored]
+```
+
+Blocks run in list order, with two exceptions that both come from conditions
+(see [EXPRESSIONS.md](EXPRESSIONS.md)):
+
+```mermaid
+flowchart TD
+    N[Block at stepIndex] --> I{"has an if,<br/>and it is false?"}
+    I -- yes --> SK[mark as skipped] --> NX[stepIndex + 1]
+    I -- no --> EX[execute the block]
+    EX --> G{"result names<br/>a block to go to?"}
+    G -- no --> NX
+    G -- "yes (condition block)" --> J["jump: stepIndex = that block<br/>blocks in between are skipped<br/>going back is limited by maxRepeats"]
 ```
 
 `run.stepIndex` always points at the block that is running, waiting or that

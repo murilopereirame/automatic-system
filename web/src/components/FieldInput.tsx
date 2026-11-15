@@ -13,9 +13,14 @@ interface Props {
   secretNames: string[];
   /** Blocks that come earlier in the workflow, offered for `step` fields. */
   earlierSteps: { id: string; label: string }[];
+  /** All other blocks of the workflow, offered for `target` fields. */
+  otherSteps?: { id: string; label: string }[];
 }
 
-export function FieldInput({ field, value, onChange, secretNames, earlierSteps }: Props) {
+/** Value of a `target` field that ends the run. The server knows it as END_OF_RUN. */
+const END_OF_RUN = '$end';
+
+export function FieldInput({ field, value, onChange, secretNames, earlierSteps, otherSteps = [] }: Props) {
   const current = value ?? field.default ?? '';
   const text = String(current);
 
@@ -55,6 +60,22 @@ export function FieldInput({ field, value, onChange, secretNames, earlierSteps }
           ))}
         </select>
       );
+      break;
+    case 'target':
+      input = (
+        <select value={text} onChange={(event) => onChange(event.target.value)}>
+          <option value="">The next block</option>
+          {otherSteps.map((step) => (
+            <option key={step.id} value={step.id}>
+              {step.label}
+            </option>
+          ))}
+          <option value={END_OF_RUN}>Finish the run</option>
+        </select>
+      );
+      break;
+    case 'expression':
+      input = <input className="mono" value={text} placeholder={field.placeholder} spellCheck={false} onChange={(event) => onChange(event.target.value)} />;
       break;
     case 'secret':
       input = (

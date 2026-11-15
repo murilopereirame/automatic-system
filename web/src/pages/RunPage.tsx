@@ -8,16 +8,25 @@ import { Terminal } from '../components/Terminal.tsx';
 import { useLive } from '../live.ts';
 import { triggerSummary } from './RunsPage.tsx';
 
-type StepState = 'done' | 'pending' | RunStatus;
+type StepState = 'done' | 'skipped' | 'pending' | RunStatus;
 
-/** Blocks before the current one are done, the current one mirrors the run, later ones are pending. */
+/** Blocks before the current one are done or were skipped by a condition, the current one mirrors the run, later ones are pending. */
 function stepState(run: Run, index: number): StepState {
-  if (run.status === 'succeeded' || index < run.stepIndex) return 'done';
-  return index === run.stepIndex ? run.status : 'pending';
+  if (run.status !== 'succeeded' && index >= run.stepIndex) return index === run.stepIndex ? run.status : 'pending';
+  return run.context.steps[run.definition.steps[index].id]?.skipped ? 'skipped' : 'done';
+}
+
+/** What a finished condition block decided, e.g. "False → Report". Shown instead of "Done". */
+function conditionOutcome(run: Run, step: StepConfig): string | undefined {
+  const output = run.context.steps[step.id]?.output as { result?: boolean; goTo?: string | null } | null | undefined;
+  if (step.type !== 'condition' || typeof output?.result !== 'boolean') return undefined;
+  const target = output.goTo === '$end' ? 'end of run' : run.definition.steps.find((candidate) => candidate.id === output.goTo)?.name || output.goTo;
+  return `${output.result ? 'True' : 'False'}${target ? ` → ${target}` : ''}`;
 }
 
 const STATE_LABEL: Record<StepState, string> = {
   done: 'Done',
+  skipped: 'Skipped',
   pending: 'Pending',
   queued: 'Queued',
   running: 'Running',
@@ -121,7 +130,7 @@ export function RunPage({ runId }: { runId: string }) {
               <button key={step.id} className={`step step-${state}${selectedStep === step.id ? ' selected' : ''}`} onClick={() => setSelectedStep(step.id)}>
                 <span className="step-dot" />
                 <span className="step-name">{step.name || step.id}</span>
-                <span className="step-state">{STATE_LABEL[state]}</span>
+                <span className="step-state">{(state === 'done' && conditionOutcome(run, step)) || STATE_LABEL[state]}</span>
               </button>
             );
           })}

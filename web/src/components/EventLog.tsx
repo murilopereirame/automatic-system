@@ -37,6 +37,10 @@ function describe(event: RunEvent): { label: string; tone?: string; body: ReactN
       return { label: 'Block started', tone: 'heading', body: data.name };
     case 'step_finished':
       return { label: 'Block finished', body: <Collapsible summary="Output"><pre>{json(data.output)}</pre></Collapsible> };
+    case 'step_skipped':
+      return { label: 'Block skipped', tone: 'heading', body: `${data.name}: ${data.reason}` };
+    case 'condition':
+      return { label: data.result ? 'Condition true' : 'Condition false', tone: data.result ? 'good' : 'attention', body: <><code>{data.expression}</code>{data.goTo ? ` → continues with ${data.goTo === '$end' ? 'the end of the run' : data.goTo}` : ''}</> };
     case 'claude_prompt':
       return { label: 'Prompt', body: <div className="prose">{data.prompt}</div> };
     case 'claude_text':

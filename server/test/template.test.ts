@@ -29,3 +29,10 @@ test('filters prepare values for JSON bodies and URLs', () => {
   assert.equal(renderString('{{missing | json}}', message), '""');
   assert.throws(() => renderString('{{message | shout}}', message), /Unknown template filter "shout"/);
 });
+
+test('evaluates {{= expressions }} and leaves other braces alone', () => {
+  assert.equal(renderString("Tests {{= steps.build.output.passed ? 'passed' : 'failed' }}, {{=1+1}} files", scope), 'Tests passed, 2 files');
+  assert.equal(renderString("{{= trigger.nope || trigger.task.name | json }}", scope), '"Fix login"');
+  assert.equal(renderString('{{= steps.build.output.files }} ${{ a b }} {{ a b }}', scope), '["a"] ${{ a b }} {{ a b }}');
+  assert.throws(() => renderString('{{= trigger.task.name == }}', scope), /Expected a value/);
+});

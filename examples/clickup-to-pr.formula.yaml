@@ -144,6 +144,27 @@ steps:
     name: Run the test suite
     with:
       command: npm test
+      continueOnError: true
+
+  # Runs only when the tests failed. "if" skips a block when it is false.
+  - id: fix
+    type: claude
+    name: Fix failing tests
+    if: "!steps.tests.output.passed"
+    with:
+      prompt: |
+        The test suite failed. Fix the cause and commit.
+
+        {{steps.tests.output.output}}
+
+  # Goes back to the tests until they pass, at most three times.
+  - id: tests_passed
+    type: condition
+    name: Tests passed?
+    with:
+      expression: steps.tests.output.passed
+      else: tests
+      maxRepeats: 3
 
   - id: final_approval
     type: approval

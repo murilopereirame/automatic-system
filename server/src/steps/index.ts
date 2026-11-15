@@ -1,6 +1,7 @@
 /** Registry of all block types. The UI builds its block palette and forms from this list. */
 import { approvalStep } from './approval.js';
 import { claudeStep } from './claude.js';
+import { conditionStep } from './condition.js';
 import { clickupCommentStep, clickupFetchTaskStep } from './clickup.js';
 import { gitCloneStep } from './git-clone.js';
 import { githubPrStep } from './github-pr.js';
@@ -15,6 +16,7 @@ export const stepTypes: StepType[] = [
   claudeStep,
   shellStep,
   approvalStep,
+  conditionStep,
   githubPrStep,
   clickupCommentStep,
 ];

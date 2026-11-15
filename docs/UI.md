@@ -35,7 +35,9 @@ flowchart LR
   type; click a trigger to edit its settings. Triggers that are called from
   outside show their own URL. Without triggers, runs start only from **Run now**.
   Use the `+` between blocks to insert one, drag a block or use the arrows to
-  reorder, click a block to edit its settings.
+  reorder, click a block to edit its settings. Every block has a **Run only
+  if** setting, and the **Condition** block branches to another block; both
+  show their expression on the block. See [EXPRESSIONS.md](EXPRESSIONS.md).
 - **Environment**: runtimes, environment variables, which secrets Claude may
   see, Claude memory files, MCP servers and expected volume mounts.
 - **Notifications**: the webhook calls, with templated URL, headers and body.
@@ -49,6 +51,7 @@ flowchart LR
 ![Run page with an approval and the shell](images/run-with-shell.png)
 
 - The list on the left shows every block and its state. Click one to see only its activity.
+  Blocks a condition passed over are marked **Skipped**, and a condition block shows what it decided.
 - The activity log updates live: prompts, Claude's messages, tool calls, commands and their output, notifications, approvals.
 - A pending approval appears on top. Approve to continue. Reject with a
   comment to send the run back to an earlier block with your comment as

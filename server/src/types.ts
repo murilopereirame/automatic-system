@@ -4,7 +4,11 @@
 export interface FieldSpec {
   key: string;
   label: string;
-  type: 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'secret' | 'step';
+  /**
+   * `step` picks an earlier block, `target` any other block or the end of the
+   * run, and `expression` is a condition (see expression.ts).
+   */
+  type: 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'secret' | 'step' | 'expression' | 'target';
   options?: string[];
   default?: unknown;
   placeholder?: string;
@@ -31,6 +35,8 @@ export interface StepConfig {
   id: string;
   type: string;
   name?: string;
+  /** Expression. When it is set and false, the run skips this block. */
+  if?: string;
   with: Record<string, unknown>;
 }
 
@@ -132,13 +138,19 @@ export interface Workflow {
 
 export type RunStatus = 'queued' | 'running' | 'waiting' | 'succeeded' | 'failed' | 'cancelled';
 
+/** Top-level names the templates and expressions of a block can use. The engine provides them (see `scopeFor` in engine/engine.ts). */
+export const SCOPE_NAMES = ['trigger', 'triggeredBy', 'steps', 'previous', 'run', 'repo'] as const;
+
 /** Mutable state carried from step to step. Templates read from it. */
 export interface RunContext {
   /** The payload of the trigger that started the run. */
   trigger: Record<string, unknown>;
   /** Which trigger started the run. Missing on runs from before workflows could have several triggers. */
   triggeredBy?: TriggerRef;
-  steps: Record<string, { output: unknown }>;
+  /** What each block produced. `skipped` marks blocks the run passed over because of a condition. */
+  steps: Record<string, { output: unknown; skipped?: boolean }>;
+  /** How often each condition block has sent the run back to an earlier block. */
+  repeats?: Record<string, number>;
   /** Directory later steps run in. Set by the "Clone repository" step. */
   workdir?: string;
   repo?: { url: string; owner: string; name: string; baseBranch: string; branch: string };
