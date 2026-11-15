@@ -130,7 +130,9 @@ check('the sandbox cannot connect to the internet directly', !network.includes('
 check('the sandbox cannot reach a cloud metadata address', !network.includes('DIRECT_OK 169.254.169.254'), network);
 check('a host that is not on the allow list is refused by the gateway', network.includes('FETCH_FAILED https://example.com/'), network);
 if (!process.env.SMOKE_SKIP_INTERNET) {
-  check('a host on the allow list is reachable through the gateway', network.includes(`FETCH_OK https://${ALLOWED}/zen 200`), network);
+  // Any HTTP answer proves the connection got through. The status itself is up to
+  // the remote side: GitHub answers 403 when the runner's address is rate limited.
+  check('a host on the allow list is reachable through the gateway', network.includes(`FETCH_OK https://${ALLOWED}/zen `), network);
 }
 
 await new Promise((resolve) => setTimeout(resolve, 6000));
