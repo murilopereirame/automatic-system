@@ -3,7 +3,7 @@ import { mockApi, tempDir, waitFor } from './helpers.js';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHmac } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { after, test } from 'node:test';
 import { emptyEnvironment } from '../src/types.js';
@@ -14,6 +14,20 @@ const clickup = await mockApi(({ method, url }) => {
   if (url === '/team') return { teams: [{ id: 'team1' }] };
   if (url.startsWith('/team/team1/task')) return { tasks: assignedTasks };
   if (method === 'GET' && url.startsWith('/task/t9')) return { id: 't9', name: 'From webhook', assignees: [{ id: 7, username: 'me' }] };
+  if (method === 'GET' && url === '/task/t5/comment') {
+    return { comments: [{ comment_text: 'Second', date: '2000', user: { username: 'ana' } }, { comment_text: 'First: split into PT I and PT II', date: '1000', user: { username: 'henrique' } }] };
+  }
+  if (method === 'GET' && url.startsWith('/task/t5')) {
+    return {
+      id: 't5',
+      name: 'Reverse and repost',
+      markdown_description: 'See the concept note.',
+      status: { status: 'in progress' },
+      subtasks: [{ id: 's1', name: 'PT I', status: { status: 'open' } }],
+      attachments: [{ title: 'concept note.txt', url: `${clickup.url}/files/note` }, { title: 'gone.pdf', url: `${clickup.url}/files/missing` }],
+    };
+  }
+  if (url === '/files/note') return { text: 'attachment body' };
   if (method === 'POST' && url === '/task/t2/comment') return {};
   return undefined;
 });
@@ -76,6 +90,28 @@ test('ClickUp webhooks need a valid signature and an assignment to me', async ()
   const [run] = runs.listRuns({ workflowId: workflow.id });
   assert.equal((run.context.trigger.task as any).name, 'From webhook');
   await app.close();
+});
+
+test('the fetch block loads comments and subtasks and saves attachments next to the repository', async () => {
+  const workflow = createWorkflow({
+    name: 'fetcher',
+    definition: { ...noSteps, trigger: { type: 'manual', with: {} }, steps: [{ id: 'task', type: 'clickup_fetch_task', with: { taskId: '{{trigger.task.id}}' } }] },
+  });
+  const run = engine.startRun(workflow, { task: { id: 't5' } });
+  await engine.waitForIdle();
+
+  const finished = runs.getRun(run.id)!;
+  assert.equal(finished.status, 'succeeded');
+  const output = finished.context.steps.task.output as any;
+  assert.equal(output.description, 'See the concept note.');
+  assert.deepEqual(output.subtasks, [{ id: 's1', name: 'PT I', status: 'open', url: 'https://app.clickup.com/t/s1' }]);
+  assert.deepEqual(output.comments.map((comment: any) => `${comment.author}: ${comment.text}`), ['henrique: First: split into PT I and PT II', 'ana: Second']);
+
+  // One attachment exists, one cannot be downloaded: the run still succeeds and says so.
+  const saved = path.join(finished.workspace, 'task-attachments', '1-concept note.txt');
+  assert.deepEqual(output.attachmentFiles, [saved]);
+  assert.equal(readFileSync(saved, 'utf8'), '{"text":"attachment body"}');
+  assert.ok(runs.listEvents(run.id).some((event) => /gone\.pdf" was not downloaded/.test(String(event.data.message))));
 });
 
 test('clone, change, push and open a pull request as the token owner', async () => {

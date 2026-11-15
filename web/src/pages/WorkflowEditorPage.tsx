@@ -18,7 +18,7 @@ const NEW_WORKFLOW: WorkflowDraft = {
   enabled: true,
   definition: {
     trigger: { type: 'manual', with: {} },
-    environment: { runtimes: [], mcpServers: {}, memory: [], env: {}, secrets: [], mounts: [] },
+    environment: { runtimes: [], mcpServers: {}, memory: [], skills: [], services: [], network: { allow: [] }, env: {}, secrets: [], mounts: [] },
     notifications: [],
     steps: [],
   },
@@ -40,7 +40,8 @@ function download(filename: string, content: string): void {
 export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
   const meta = useLoad(api.meta);
   const secrets = useLoad(api.secrets);
-  const mounts = useLoad(() => (workflowId ? api.mounts(workflowId) : Promise.resolve([])), workflowId);
+  const requirements = useLoad(() => (workflowId ? api.requirements(workflowId) : Promise.resolve(undefined)), workflowId);
+  const sandbox = useLoad(api.sandbox);
   const [saved, setSaved] = useState<Workflow>();
   const [draft, setDraft] = useState<WorkflowDraft>(NEW_WORKFLOW);
   const [tab, setTab] = useState<Tab>('Blocks');
@@ -66,7 +67,7 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
       setDraft(toDraft(workflow));
       setError(undefined);
       setNotice('Saved');
-      mounts.reload();
+      requirements.reload();
       if (!workflowId) navigate(`/workflows/${workflow.id}`);
       return workflow;
     } catch (reason) {
@@ -155,7 +156,7 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
         </>
       )}
       {tab === 'Environment' && (
-        <EnvironmentEditor environment={draft.definition.environment} secretNames={secrets.data ?? []} mountStatus={mounts.data} onChange={(environment) => setDefinition({ environment })} />
+        <EnvironmentEditor environment={draft.definition.environment} secretNames={secrets.data ?? []} requirements={requirements.data} egressEnforced={sandbox.data?.egressEnforced} onChange={(environment) => setDefinition({ environment })} />
       )}
       {tab === 'Notifications' && <NotificationsEditor notifications={draft.definition.notifications} onChange={(notifications) => setDefinition({ notifications })} />}
       {tab === 'Code' && <CodeView draft={draft} onApply={(applied) => (setDraft(applied), setTab('Blocks'))} />}

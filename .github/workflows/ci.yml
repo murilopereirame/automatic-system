@@ -40,6 +40,7 @@ jobs:
       AUTOWORKER_IMAGE: autoworker:ci
       AUTOWORKER_TOKEN: ci-token
       AUTOWORKER_SECRET_KEY: ci-secret-key
+      AUTOWORKER_GATEWAY_SECRET: ci-gateway-secret
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

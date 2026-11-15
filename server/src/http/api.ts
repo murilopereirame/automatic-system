@@ -3,7 +3,9 @@ import type { FastifyInstance } from 'fastify';
 import { cancelRun, resolveApproval, retryRun, startRun } from '../engine/engine.js';
 import { HttpError } from '../errors.js';
 import { parseDefinition, parseFormula, toFormula } from '../formula.js';
-import { checkMounts, readMemory, writeMemory } from '../sandbox/environment.js';
+import { config } from '../config.js';
+import { recentlyBlocked } from '../egress.js';
+import { checkMounts, checkServices, readMemory, readSkills, writeMemory } from '../sandbox/environment.js';
 import * as runs from '../store/runs.js';
 import { deleteSecret, listSecretNames, setSecret } from '../store/secrets.js';
 import { getSettings, saveSettings } from '../store/settings.js';
@@ -88,14 +90,18 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
     return startRun(workflowOr404(request.params.id), { source: 'manual', ...payload });
   });
 
-  app.get<IdParams>('/workflows/:id/mounts', async (request) => checkMounts(workflowOr404(request.params.id).definition.environment.mounts));
+  /** Which of the things a workflow expects from the deployment are actually there. */
+  app.get<IdParams>('/workflows/:id/requirements', async (request) => {
+    const { mounts, services } = workflowOr404(request.params.id).definition.environment;
+    return { mounts: await checkMounts(mounts), services: await checkServices(services) };
+  });
 
   // ---- Formulas ------------------------------------------------------------
 
   app.get<IdParams>('/workflows/:id/formula', async (request, reply) => {
     const workflow = workflowOr404(request.params.id);
     reply.type('application/yaml');
-    return toFormula(workflow, await readMemory(workflow));
+    return toFormula(workflow, { memory: await readMemory(workflow), skills: await readSkills(workflow) });
   });
 
   app.post('/formulas/import', async (request) => {
@@ -187,6 +193,14 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
     deleteSecret(request.params.name);
     return { ok: true };
   });
+
+  /** State of the sandbox, for the Settings page. */
+  app.get('/sandbox', async () => ({
+    egressEnforced: config.egressProxy !== undefined,
+    alwaysAllowed: config.egressAlwaysAllow,
+    separateAgentUser: config.agentUid !== undefined,
+    recentlyBlocked: recentlyBlocked(),
+  }));
 
   app.get('/settings', async () => getSettings());
 

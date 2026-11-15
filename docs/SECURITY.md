@@ -8,7 +8,8 @@ or repository) and limits what it can reach when that happens.
 
 | Asset | Threat | Protection |
 |-------|--------|------------|
-| The host and other containers | The agent breaks out of the container | Hardened container: no capabilities, no new privileges, read-only image, no Docker socket, own network |
+| The host and other containers | The agent breaks out of the container | Hardened container: no capabilities, no new privileges, read-only image, no Docker socket |
+| The host's network, the local network, cloud metadata | The agent connects to services it should not see, or sends data anywhere | The sandbox is on an internal network. A gateway only connects to hosts on the allow list |
 | The app's own secrets and database | The agent reads tokens or tampers with workflows | The agent is a different, unprivileged user. The database directory is not readable by it. Its environment is built from scratch |
 | Your GitHub identity | The agent pushes or opens pull requests on its own | The GitHub token is only handed to the push step, which you gate with an approval block |
 | The web UI and shell | Someone else uses them | Token login, HttpOnly SameSite cookie, origin check on the shell WebSocket, port bound to localhost by default |
@@ -17,30 +18,35 @@ or repository) and limits what it can reach when that happens.
 
 ```mermaid
 flowchart TB
+    U([You]) -->|"127.0.0.1:8080"| GW
     subgraph Host
-        subgraph C["Container: cap_drop ALL, no-new-privileges, read-only root, pids and memory limits"]
-            subgraph S["Server (root with only SETUID, SETGID, KILL)"]
-                DB[("/data<br/>database, encrypted secrets<br/>mode 0700")]
-                ENG[Engine and API]
+        subgraph N["sandbox network (internal: no route out)"]
+            subgraph C["autoworker container: cap_drop ALL, no-new-privileges, read-only root, limits"]
+                subgraph S["Server (root with only SETUID, SETGID, KILL)"]
+                    DB[("/data<br/>database, encrypted secrets<br/>mode 0700")]
+                    ENG[Engine and API]
+                end
+                subgraph A["Agent user (uid 10001, no capabilities, no extra groups)"]
+                    CL[Claude Code]
+                    CMD[Commands and tests]
+                    SH[Web shell]
+                end
             end
-            subgraph A["Agent user (uid 10001, no capabilities, no extra groups)"]
-                CL[Claude Code]
-                CMD[Commands and tests]
-                SH[Web shell]
-            end
-            WS[("/workspaces")]
-            HM[("/home/agent")]
+            SVC[("Service containers<br/>e.g. mongo")]
         end
+        GW["gateway container<br/>UI relay + allow-list proxy"]
         DS[Docker socket]
-        OC[Other containers]
+        LAN[Host services, LAN,<br/>cloud metadata]
     end
+    NET([Allowed hosts<br/>on the internet])
 
     ENG -->|"spawn with clean environment"| A
-    A --- WS
-    A --- HM
     A -.-x|"permission denied"| DB
+    A --> SVC
+    A -->|"HTTPS_PROXY"| GW
+    GW -->|"allow list"| NET
+    GW -.-x|"refused"| LAN
     C -.-x|"not mounted"| DS
-    C -.-x|"separate network"| OC
 ```
 
 ### 1. The container boundary
@@ -53,9 +59,9 @@ Set in [`compose.yaml`](../compose.yaml):
 | `no-new-privileges` | `sudo`, `su` and any other setuid binary cannot raise privileges |
 | `read_only: true` | The image cannot be modified. Only the volumes and `/tmp` are writable |
 | No Docker socket, no `privileged`, no host namespaces | There is no path to the Docker daemon or to host processes |
-| Own bridge network | Containers of other compose projects are not on this network |
+| `internal: true` network | The sandbox has no route to the internet, the host or other compose projects. Only the gateway and the workflow's service containers are reachable |
 | `pids_limit`, `mem_limit`, `cpus` | A runaway process cannot exhaust the host |
-| Port bound to `127.0.0.1` | The UI is not exposed to the network unless you put a reverse proxy in front |
+| Port bound to `127.0.0.1` (on the gateway) | The UI is not exposed to the network unless you put a reverse proxy in front |
 
 Docker's default seccomp and AppArmor profiles stay active. Do not disable them.
 
@@ -83,6 +89,44 @@ Every agent process is started through `server/src/sandbox/agent.ts`, which
 - Claude sees only the secrets a workflow explicitly exposes.
 - The GitHub token used for clone and push is passed to that single git process through its environment. It is not written to `.git/config` or the remote URL.
 
+### 4. The gateway
+
+The gateway is a second container from the same image, running as an
+unprivileged user with no capabilities. It is the only container attached to
+a network with a route out, and it does two things
+([`server/src/gateway`](../server/src/gateway)):
+
+- **In**: it relays the published port to the app.
+- **Out**: it is a forward proxy that connects only to hosts on the allow
+  list. The list comes from the `network.allow` section of the enabled
+  workflows, plus `AUTOWORKER_EGRESS_ALLOW`.
+
+```mermaid
+sequenceDiagram
+    participant A as Sandbox process
+    participant G as Gateway
+    participant S as Server
+    participant X as Internet
+    loop every 5 seconds
+        G->>S: blocked hosts so far
+        S-->>G: current allow list
+    end
+    A->>G: CONNECT registry.npmjs.org:443
+    G->>X: allowed, tunnel opened
+    A->>G: CONNECT evil.example:443
+    G-->>A: 403, and the host is listed under Settings > Sandbox
+```
+
+Rules that hold regardless of the list:
+
+- A host that resolves to a private, loopback or link-local address is
+  refused unless it is listed by its exact name. A wildcard never opens the
+  host, the local network or a metadata endpoint.
+- The server's own calls (ClickUp, GitHub, notification webhooks) present the
+  gateway secret and are not restricted. Sandbox processes never see that
+  secret.
+- Until the gateway has fetched the list for the first time, it allows nothing.
+
 ## Verified on every build
 
 CI starts the built image with the hardened compose file and runs
@@ -94,7 +138,9 @@ sandbox from the inside. The build fails unless all of these hold:
 - the root file system is read-only
 - the server database cannot be read or listed
 - no Docker socket is present
-- the login token is neither in the agent's environment nor readable through `/proc`
+- the login token, the secret key and the gateway secret are neither in the agent's environment nor readable through `/proc`
+- a direct connection to the internet or to a metadata address fails
+- a host that is not on the allow list is refused and reported, and an allowed host is reachable
 - the bundled tools are installed
 
 Run it yourself against a running deployment:
@@ -107,11 +153,15 @@ node docker/smoke-test.mjs http://localhost:8080 "$AUTOWORKER_TOKEN"
 
 Be aware of what the sandbox does not do:
 
-- **Outbound network is open.** The agent can reach the internet, and
-  addresses the host can reach (including a cloud metadata endpoint, if your
-  host has one). Restricting egress to an allow list is planned as the next
-  milestone. Until then, run it on a host whose network you are comfortable
-  exposing, or add firewall rules for the `sandbox` bridge network.
+- **The allow list is shared.** The gateway cannot tell runs apart, so every
+  sandbox process may reach the hosts of all enabled workflows. Anything on
+  the list is also a place data could be sent to, so keep it short.
+- **Only proxy-aware traffic gets out.** Programs that ignore the proxy
+  variables simply fail to connect. That is the safe direction, but see
+  [FORMULA.md](FORMULA.md#network) for Playwright.
+- **Without the gateway there is no egress control.** Running the image on
+  its own (plain `docker run`, development mode) leaves outbound access open.
+  Settings > Sandbox shows whether enforcement is active.
 - **Processes of the agent user can see each other.** A background process
   left behind by Claude could read the environment of a later process of the
   same user, including the git process that pushes with your token. Use a

@@ -1,17 +1,19 @@
 /** Editor for everything a workflow needs around it. All of it ends up in the formula. */
 import { useState } from 'react';
-import type { Environment } from '../api.ts';
+import type { Environment, Requirements, ServiceSpec } from '../api.ts';
 import { ListEditor } from './ListEditor.tsx';
 
 interface Props {
   environment: Environment;
   secretNames: string[];
-  /** Which declared mount targets exist in the container, when known. */
-  mountStatus?: { target: string; present: boolean }[];
+  /** Which declared mounts and services exist in the deployment, when known. */
+  requirements?: Requirements;
+  /** Whether the deployment restricts outbound connections to the allow list. */
+  egressEnforced?: boolean;
   onChange: (environment: Environment) => void;
 }
 
-export function EnvironmentEditor({ environment, secretNames, mountStatus, onChange }: Props) {
+export function EnvironmentEditor({ environment, secretNames, requirements, egressEnforced, onChange }: Props) {
   const set = (changes: Partial<Environment>) => onChange({ ...environment, ...changes });
   const envRows = Object.entries(environment.env).map(([name, value]) => ({ name, value }));
   const allSecrets = [...new Set([...secretNames, ...environment.secrets])].sort();
@@ -84,6 +86,27 @@ export function EnvironmentEditor({ environment, secretNames, mountStatus, onCha
       </section>
 
       <section className="card">
+        <h2>Skills</h2>
+        <p className="muted">
+          Claude Code skills for this workflow: reusable instructions Claude loads when a task matches the description in the frontmatter. Each skill is stored as <code>skills/&lt;name&gt;/SKILL.md</code>. Skills added on disk are
+          included when you export the formula.
+        </p>
+        <ListEditor
+          items={environment.skills}
+          onChange={(skills) => set({ skills })}
+          blank={() => ({ name: '', content: '---\nname: my-skill\ndescription: When to use this skill\n---\n\nInstructions for Claude.\n' })}
+          addLabel="Add skill"
+        >
+          {(skill, update) => (
+            <div className="stack">
+              <input placeholder="frontend-prompt" value={skill.name} onChange={(event) => update({ name: event.target.value.replace(/[^\w-]/g, '-') })} />
+              <textarea className="mono" rows={7} value={skill.content} onChange={(event) => update({ content: event.target.value })} spellCheck={false} />
+            </div>
+          )}
+        </ListEditor>
+      </section>
+
+      <section className="card">
         <h2>MCP servers</h2>
         <p className="muted">
           The <code>mcpServers</code> object of a Claude Code .mcp.json file. Refer to variables and exposed secrets as <code>{'${NAME}'}</code>.
@@ -92,11 +115,63 @@ export function EnvironmentEditor({ environment, secretNames, mountStatus, onCha
       </section>
 
       <section className="card">
+        <h2>Services</h2>
+        <p className="muted">
+          Helper containers the workflow needs, such as a database for tests. They run next to the sandbox as their own compose services, so the sandbox never needs access to Docker. Claude and commands reach them by name, for
+          example <code>mongo:27017</code>. A run waits for them and fails with a clear message when one is missing.
+        </p>
+        <ListEditor items={environment.services} onChange={(services) => set({ services })} blank={(): ServiceSpec => ({ name: '', image: '', ports: [], env: {} })} addLabel="Add service">
+          {(service, update) => (
+            <div className="stack">
+              <div className="list-row">
+                <input placeholder="mongo" value={service.name} onChange={(event) => update({ name: event.target.value.toLowerCase() })} />
+                <input placeholder="mongo:7" value={service.image} onChange={(event) => update({ image: event.target.value })} />
+                <input placeholder="27017" value={service.ports.join(', ')} onChange={(event) => update({ ports: toPorts(event.target.value) })} />
+              </div>
+              <input
+                className="mono"
+                placeholder="Environment, e.g. POSTGRES_PASSWORD=test POSTGRES_DB=app"
+                defaultValue={Object.entries(service.env).map(([name, value]) => `${name}=${value}`).join(' ')}
+                onChange={(event) => update({ env: toEnv(event.target.value) })}
+              />
+              <span className="meta">
+                {service.ports.map((port) => {
+                  const probe = requirements?.services.find((entry) => entry.name === service.name && entry.port === port);
+                  if (!probe) return null;
+                  return (
+                    <span key={port} className={probe.reachable ? 'status status-succeeded' : 'status status-failed'}>
+                      {service.name}:{port} {probe.reachable ? 'reachable' : 'not reachable'}
+                    </span>
+                  );
+                })}
+              </span>
+            </div>
+          )}
+        </ListEditor>
+      </section>
+
+      <section className="card">
+        <h2>Network</h2>
+        <p className="muted">
+          Hosts the sandbox may connect to, one per line. Use <code>*.example.com</code> for a domain with its subdomains, or <code>*</code> for everything. The host and local network are never reachable through a wildcard.
+        </p>
+        {egressEnforced === false && <p className="hint warning">This deployment runs without the gateway, so outbound connections are not restricted and this list is not enforced.</p>}
+        <textarea
+          className="mono"
+          rows={Math.max(4, environment.network.allow.length + 1)}
+          placeholder={'github.com\napi.github.com\nregistry.npmjs.org\nstaging.example.com'}
+          defaultValue={environment.network.allow.join('\n')}
+          onChange={(event) => set({ network: { allow: event.target.value.split(/[\s,]+/).filter(Boolean) } })}
+          spellCheck={false}
+        />
+      </section>
+
+      <section className="card">
         <h2>Volume mounts</h2>
         <p className="muted">Mounts this workflow expects. They are created when the container starts, so add them to your compose file; this list travels with the formula and shows which targets are missing.</p>
         <ListEditor items={environment.mounts} onChange={(mounts) => set({ mounts })} blank={() => ({ source: '', target: '', readOnly: false })} addLabel="Add mount">
           {(mount, update) => {
-            const status = mountStatus?.find((entry) => entry.target === mount.target);
+            const status = requirements?.mounts.find((entry) => entry.target === mount.target);
             return (
               <>
                 <input placeholder="./host/path or volume" value={mount.source} onChange={(event) => update({ source: event.target.value })} />
@@ -110,16 +185,51 @@ export function EnvironmentEditor({ environment, secretNames, mountStatus, onCha
             );
           }}
         </ListEditor>
-        {environment.mounts.length > 0 && (
-          <pre className="code">
-            {`# docker-compose.override.yml\nservices:\n  autoworker:\n    volumes:\n${environment.mounts
-              .map((mount) => `      - ${mount.source}:${mount.target}${mount.readOnly ? ':ro' : ''}`)
-              .join('\n')}`}
-          </pre>
-        )}
       </section>
+
+      {(environment.mounts.length > 0 || environment.services.length > 0) && (
+        <section className="card">
+          <h2>Deployment snippet</h2>
+          <p className="muted">
+            Services and mounts are created by Docker when the deployment starts. Save this as <code>compose.override.yaml</code> next to <code>compose.yaml</code> and run <code>docker compose up -d</code>.
+          </p>
+          <pre className="code">{composeOverride(environment)}</pre>
+        </section>
+      )}
     </div>
   );
+}
+
+function toPorts(text: string): number[] {
+  return text
+    .split(/[\s,]+/)
+    .map(Number)
+    .filter((port) => Number.isInteger(port) && port > 0);
+}
+
+/** Parses `NAME=value OTHER=value` into an object. */
+function toEnv(text: string): Record<string, string> {
+  const pairs = text
+    .split(/\s+/)
+    .filter((pair) => pair.includes('='))
+    .map((pair) => [pair.slice(0, pair.indexOf('=')), pair.slice(pair.indexOf('=') + 1)]);
+  return Object.fromEntries(pairs);
+}
+
+/** The compose file that adds this workflow's services and mounts to the deployment. */
+function composeOverride(environment: Environment): string {
+  const lines = ['services:'];
+  if (environment.mounts.length > 0) {
+    lines.push('  autoworker:', '    volumes:');
+    for (const mount of environment.mounts) lines.push(`      - ${mount.source}:${mount.target}${mount.readOnly ? ':ro' : ''}`);
+  }
+  for (const service of environment.services) {
+    lines.push(`  ${service.name || 'service'}:`, `    image: ${service.image}`, '    restart: unless-stopped', '    networks: [sandbox]');
+    if (service.command) lines.push(`    command: ${service.command}`);
+    const variables = Object.entries(service.env);
+    if (variables.length > 0) lines.push('    environment:', ...variables.map(([name, value]) => `      ${name}: ${JSON.stringify(value)}`));
+  }
+  return lines.join('\n');
 }
 
 /** A textarea for a JSON value that only reports changes when the text is valid JSON. */

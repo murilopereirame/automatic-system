@@ -141,3 +141,17 @@ test('memory files are written for Claude and read back for export', async () =>
   assert.equal(claudeConfigDir(workflow.id).startsWith(process.env.AUTOWORKER_DATA_DIR!), true);
   assert.deepEqual(await readMemory(workflow), [{ path: 'CLAUDE.md', content: 'Use pnpm.Tests need Redis.\n' }]);
 });
+
+test('skills are written as SKILL.md files and exported with what was added on disk', async () => {
+  const { readSkills } = await import('../src/sandbox/environment.js');
+  const environment = { ...emptyEnvironment(), skills: [{ name: 'frontend-prompt', content: '---\nname: frontend-prompt\n---\nWrite the handoff.' }] };
+  const addSkill = 'mkdir -p "$CLAUDE_CONFIG_DIR/skills/learned" && echo "New skill" > "$CLAUDE_CONFIG_DIR/skills/learned/SKILL.md" && cat "$CLAUDE_CONFIG_DIR/skills/frontend-prompt/SKILL.md"';
+  const workflow = workflowWith([{ id: 'use', type: 'shell', with: { command: addSkill } }], environment);
+  const run = await runToRest(workflow);
+
+  assert.match((run.context.steps.use.output as any).output, /Write the handoff\./);
+  assert.deepEqual(await readSkills(workflow), [
+    { name: 'frontend-prompt', content: '---\nname: frontend-prompt\n---\nWrite the handoff.' },
+    { name: 'learned', content: 'New skill\n' },
+  ]);
+});

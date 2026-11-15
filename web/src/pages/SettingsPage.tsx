@@ -10,6 +10,7 @@ export function SettingsPage() {
       <div className="sections">
         <Secrets />
         <GitIdentity />
+        <Sandbox />
       </div>
     </>
   );
@@ -94,5 +95,46 @@ function GitIdentity() {
         <span className="muted">{notice}</span>
       </div>
     </form>
+  );
+}
+
+/** Read-only view of how the sandbox is deployed, and what the gateway blocked recently. */
+function Sandbox() {
+  const sandbox = useLoad(api.sandbox);
+  if (!sandbox.data) return null;
+  const { separateAgentUser, egressEnforced, alwaysAllowed, recentlyBlocked } = sandbox.data;
+  const state = (active: boolean, on: string, off: string) => <span className={active ? 'status status-succeeded' : 'status status-failed'}>{active ? on : off}</span>;
+
+  return (
+    <section className="card">
+      <h2>Sandbox</h2>
+      <div className="list-editor">
+        <div className="list-row">
+          <span className="grow">Claude runs as a separate, unprivileged user</span>
+          {state(separateAgentUser, 'Active', 'Off (development mode)')}
+        </div>
+        <div className="list-row">
+          <span className="grow">Outbound connections are limited to the allow list</span>
+          {state(egressEnforced, 'Active', 'Off (no gateway)')}
+        </div>
+      </div>
+      <p className="muted">
+        Always allowed: {alwaysAllowed.map((host) => <code key={host}>{host}</code>)}. Everything else comes from the Network section of each enabled workflow.
+      </p>
+      {recentlyBlocked.length > 0 && (
+        <>
+          <h2>Recently blocked connections</h2>
+          <p className="muted">If Claude or a command needed one of these, add the host to the Network section of the workflow.</p>
+          <div className="list-editor">
+            {recentlyBlocked.map((entry) => (
+              <div className="list-row" key={entry.host}>
+                <code className="grow">{entry.host}</code>
+                <span className="muted">{new Date(entry.at).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
   );
 }

@@ -4,12 +4,14 @@ import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { config } from '../config.js';
+import { currentAllowList, recordBlocked } from '../egress.js';
 import { HttpError } from '../errors.js';
 import { getWorkflow } from '../store/workflows.js';
 import { fireFor, getTriggerType } from '../triggers/index.js';
 import { registerApi } from './api.js';
 import { isAuthenticated, login, logout } from './auth.js';
 import { registerShell } from './shell.js';
+import { safeEqual } from '../triggers/webhook.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -63,6 +65,14 @@ export async function buildServer(): Promise<FastifyInstance> {
       fireFor(workflow.id),
     );
     return { ok: true };
+  });
+
+  // ---- Gateway sync: the gateway fetches the egress allow list and reports what it blocked ----
+  app.post('/internal/egress', async (request) => {
+    const presented = (request.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
+    if (!config.gatewaySecret || !safeEqual(presented, config.gatewaySecret)) throw new HttpError(404, 'Not found');
+    recordBlocked(((request.body as any)?.blocked ?? []).map((entry: any) => ({ host: String(entry.host), at: String(entry.at) })));
+    return { allow: currentAllowList() };
   });
 
   await app.register(registerApi, { prefix: '/api' });

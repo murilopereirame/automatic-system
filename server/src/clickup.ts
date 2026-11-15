@@ -8,6 +8,11 @@ export interface ClickupTask {
   url: string;
   status: string;
   assignees: { id: number; username: string }[];
+  attachments: { title: string; url: string }[];
+  /** Present when the task was loaded with `subtasks: true`. */
+  subtasks?: { id: string; name: string; status: string; url: string }[];
+  /** Present when the task was loaded with `comments: true`. Oldest first. */
+  comments?: { author: string; text: string; date: string }[];
 }
 
 async function clickupRequest<T>(token: string, method: string, route: string, body?: unknown): Promise<T> {
@@ -29,6 +34,7 @@ function toTask(raw: any): ClickupTask {
     url: raw.url ?? `https://app.clickup.com/t/${raw.id}`,
     status: raw.status?.status ?? '',
     assignees: (raw.assignees ?? []).map((assignee: any) => ({ id: assignee.id, username: assignee.username })),
+    attachments: (raw.attachments ?? []).map((attachment: any) => ({ title: String(attachment.title ?? attachment.id), url: String(attachment.url) })),
   };
 }
 
@@ -43,8 +49,35 @@ export async function getFirstTeamId(token: string): Promise<string> {
   return teams[0].id;
 }
 
-export async function getTask(token: string, taskId: string): Promise<ClickupTask> {
-  return toTask(await clickupRequest(token, 'GET', `/task/${encodeURIComponent(taskId)}?include_markdown_description=true`));
+export async function getTask(token: string, taskId: string, include: { subtasks?: boolean; comments?: boolean } = {}): Promise<ClickupTask> {
+  const id = encodeURIComponent(taskId);
+  const raw: any = await clickupRequest(token, 'GET', `/task/${id}?include_markdown_description=true&include_subtasks=${include.subtasks === true}`);
+  const task = toTask(raw);
+
+  if (include.subtasks) {
+    task.subtasks = (raw.subtasks ?? []).map((subtask: any) => {
+      const { id: subtaskId, name, status, url } = toTask(subtask);
+      return { id: subtaskId, name, status, url };
+    });
+  }
+  if (include.comments) {
+    const { comments } = await clickupRequest<{ comments: any[] }>(token, 'GET', `/task/${id}/comment`);
+    task.comments = comments
+      .map((comment) => ({ author: String(comment.user?.username ?? ''), text: String(comment.comment_text ?? ''), date: new Date(Number(comment.date)).toISOString() }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+  return task;
+}
+
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
+/** Downloads a task attachment. Attachment URLs are pre-signed, so no token is sent. */
+export async function downloadAttachment(url: string): Promise<Buffer> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Attachment download failed (${response.status})`);
+  const content = Buffer.from(await response.arrayBuffer());
+  if (content.length > MAX_ATTACHMENT_BYTES) throw new Error('Attachment is larger than 25 MB');
+  return content;
 }
 
 /** Open tasks assigned to a user, most recently updated first (first page, up to 100 tasks). */

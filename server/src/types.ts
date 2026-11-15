@@ -40,12 +40,44 @@ export interface MountSpec {
   readOnly?: boolean;
 }
 
+/** A Claude Code skill: instructions Claude loads when a task matches its description. */
+export interface SkillSpec {
+  /** Directory name of the skill, e.g. `frontend-prompt`. */
+  name: string;
+  /** Content of the skill's SKILL.md, including its frontmatter. */
+  content: string;
+}
+
+/**
+ * A helper container the workflow needs next to the sandbox, such as a
+ * database for tests. It runs as its own compose service; the sandbox reaches
+ * it by name, e.g. `mongo:27017`.
+ */
+export interface ServiceSpec {
+  name: string;
+  image: string;
+  ports: number[];
+  env: Record<string, string>;
+  command?: string;
+}
+
+export interface NetworkSpec {
+  /**
+   * Hosts the sandbox may connect to, e.g. `github.com` or `*.npmjs.org`.
+   * `*` allows everything. Only enforced when the gateway is deployed.
+   */
+  allow: string[];
+}
+
 /** Everything a workflow needs around it. This is what makes a formula portable. */
 export interface Environment {
   runtimes: RuntimeSpec[];
   /** Same shape as the `mcpServers` object of a Claude Code `.mcp.json` file. */
   mcpServers: Record<string, unknown>;
   memory: MemoryFile[];
+  skills: SkillSpec[];
+  services: ServiceSpec[];
+  network: NetworkSpec;
   /** Plain environment variables given to Claude, commands and the web shell. */
   env: Record<string, string>;
   /** Names of stored secrets that are also exposed as environment variables. */
@@ -142,5 +174,5 @@ export interface Settings {
 }
 
 export function emptyEnvironment(): Environment {
-  return { runtimes: [], mcpServers: {}, memory: [], env: {}, secrets: [], mounts: [] };
+  return { runtimes: [], mcpServers: {}, memory: [], skills: [], services: [], network: { allow: [] }, env: {}, secrets: [], mounts: [] };
 }

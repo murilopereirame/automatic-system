@@ -44,6 +44,16 @@ export const config = {
   /** Base URL used in notification links, e.g. https://autoworker.example.com */
   publicUrl: (env.AUTOWORKER_PUBLIC_URL ?? '').replace(/\/$/, ''),
 
+  /**
+   * Forward proxy all sandbox traffic has to go through, e.g. http://gateway:3128.
+   * Set by compose.yaml. When unset, outbound access is not restricted.
+   */
+  egressProxy: env.AUTOWORKER_EGRESS_PROXY || undefined,
+  /** Shared with the gateway: authenticates the allow-list sync and the server's own outbound calls. */
+  gatewaySecret: env.AUTOWORKER_GATEWAY_SECRET || undefined,
+  /** Hosts every sandbox may reach in addition to what formulas allow. */
+  egressAlwaysAllow: (env.AUTOWORKER_EGRESS_ALLOW ?? 'api.anthropic.com').split(',').map((host) => host.trim()).filter(Boolean),
+
   clickupApiUrl: env.CLICKUP_API_URL ?? 'https://api.clickup.com/api/v2',
   githubApiUrl: env.GITHUB_API_URL ?? 'https://api.github.com',
 };

@@ -61,6 +61,8 @@ flowchart TB
 | `server/src/triggers/` | One file per trigger type, plus the manager in `triggers/index.ts` |
 | `server/src/sandbox/` | Running processes as the agent user, preparing runtimes, memory and MCP config |
 | `server/src/notify.ts` | Notification webhooks |
+| `server/src/egress.ts` | The egress allow list (what is on it, what was blocked) |
+| `server/src/gateway/` | The gateway container: UI relay and allow-list proxy. Shares no state with the server |
 | `server/src/http/` | Server setup, authentication, JSON API, web shell |
 | `server/test/` | Tests. External services are replaced by local stand-ins |
 | `web/src/` | The React web UI, see [UI.md](UI.md) |

@@ -32,8 +32,37 @@ environment:
         - Keep changes small and focused on the task.
         - Run the test suite before you say you are done.
         - Commit your work with clear messages. Never push; pushing happens after human approval.
+  # Claude Code skills, stored as skills/<name>/SKILL.md in the workflow's Claude config.
+  skills:
+    - name: pr-summary
+      content: |
+        ---
+        name: pr-summary
+        description: Use when asked to summarise a change for a pull request description.
+        ---
+        Write a short summary of what changed and why, a list of the main changes,
+        and how it was tested (commands and results). Do not include secrets or
+        internal URLs.
+  # Helper containers for tests. Add them to the deployment with the snippet
+  # the Environment tab generates. The sandbox reaches this one as mongo:27017.
+  services:
+    - name: mongo
+      image: mongo:7
+      ports: [27017]
+      env: {}
+  # Hosts the sandbox may connect to. Everything else is refused by the gateway.
+  network:
+    allow:
+      - github.com
+      - api.github.com
+      - "*.githubusercontent.com"
+      - registry.npmjs.org
+      - nodejs.org
+      - "*.jdx.dev"
+      - cdn.playwright.dev
   env:
     CI: "true"
+    MONGODB_URI: mongodb://mongo:27017/test
   secrets:
     - CLAUDE_CODE_OAUTH_TOKEN
   mounts: []
@@ -62,6 +91,9 @@ steps:
     name: Fetch the task
     with:
       taskId: "{{trigger.task.id}}"
+      includeComments: true
+      includeSubtasks: true
+      downloadAttachments: true
 
   - id: clone
     type: git_clone
@@ -82,7 +114,11 @@ steps:
 
         {{steps.task.output.description}}
 
-        Add or update tests, run them, and commit your work when they pass.
+        Comments: {{steps.task.output.comments}}
+        Subtasks: {{steps.task.output.subtasks}}
+        Attachments were downloaded to: {{steps.task.output.attachmentFiles}}
+
+        Read the existing code first and follow its conventions. Add or update tests, run them, and commit your work when they pass.
 
   - id: staging
     type: approval

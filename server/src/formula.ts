@@ -11,7 +11,7 @@ import { HttpError } from './errors.js';
 import { getStepType } from './steps/index.js';
 import type { WorkflowInput } from './store/workflows.js';
 import { getTriggerType } from './triggers/index.js';
-import { emptyEnvironment, type Environment, type MemoryFile, type NotificationWebhook, type StepConfig, type Workflow, type WorkflowDefinition } from './types.js';
+import { emptyEnvironment, type Environment, type MemoryFile, type NotificationWebhook, type SkillSpec, type StepConfig, type Workflow, type WorkflowDefinition } from './types.js';
 
 export const FORMULA_API_VERSION = 'autoworker/v1';
 
@@ -46,6 +46,23 @@ function parseEnvironment(input: unknown): Environment {
     if (!file.path) invalid('every memory file needs a path');
     return { path: String(file.path), content: String(file.content ?? '') };
   });
+  environment.skills = asArray(raw.skills, 'environment.skills').map((item) => {
+    const skill = asObject(item, 'a skill');
+    const name = String(skill.name ?? '');
+    if (!/^[\w-]+$/.test(name)) invalid(`skill name "${name}" may only contain letters, digits, "_" and "-"`);
+    return { name, content: String(skill.content ?? '') };
+  });
+  environment.services = asArray(raw.services, 'environment.services').map((item) => {
+    const service = asObject(item, 'a service');
+    const name = String(service.name ?? '');
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) invalid(`service name "${name}" must be a lowercase host name`);
+    if (!service.image) invalid(`service "${name}" needs an image`);
+    const ports = asArray(service.ports, `ports of service "${name}"`).map(Number);
+    if (ports.some((port) => !Number.isInteger(port) || port < 1 || port > 65535)) invalid(`service "${name}" has an invalid port`);
+    const env = Object.entries(asObject(service.env, `env of service "${name}"`)).map(([key, value]) => [key, String(value)]);
+    return { name, image: String(service.image), ports, env: Object.fromEntries(env), command: service.command ? String(service.command) : undefined };
+  });
+  environment.network = { allow: asArray(asObject(raw.network, 'environment.network').allow, 'environment.network.allow').map(String) };
   environment.env = Object.fromEntries(Object.entries(asObject(raw.env, 'environment.env')).map(([key, value]) => [key, String(value)]));
   environment.secrets = asArray(raw.secrets, 'environment.secrets').map(String);
   environment.mounts = asArray(raw.mounts, 'environment.mounts').map((item) => {
@@ -121,15 +138,15 @@ export function parseFormula(source: string): WorkflowInput {
   };
 }
 
-/** Serialises a workflow as a formula. `memory` lets the caller pass a fresh snapshot from disk. */
-export function toFormula(workflow: Workflow, memory: MemoryFile[] = workflow.definition.environment.memory): string {
+/** Serialises a workflow as a formula. `snapshot` lets the caller pass memory and skills as they are on disk right now. */
+export function toFormula(workflow: Workflow, snapshot: { memory?: MemoryFile[]; skills?: SkillSpec[] } = {}): string {
   const { trigger, environment, notifications, steps } = workflow.definition;
   const document = {
     apiVersion: FORMULA_API_VERSION,
     kind: 'Formula',
     metadata: { name: workflow.name, description: workflow.description, enabled: workflow.enabled },
     trigger,
-    environment: { ...environment, memory },
+    environment: { ...environment, memory: snapshot.memory ?? environment.memory, skills: snapshot.skills ?? environment.skills },
     notifications,
     steps,
   };

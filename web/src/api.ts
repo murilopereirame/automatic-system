@@ -27,6 +27,19 @@ export interface PendingApproval extends Approval {
   workflowName: string;
 }
 
+/** Which of the things a workflow expects from the deployment are actually there. */
+export interface Requirements {
+  mounts: { target: string; present: boolean }[];
+  services: { name: string; port: number; reachable: boolean }[];
+}
+
+export interface SandboxStatus {
+  egressEnforced: boolean;
+  alwaysAllowed: string[];
+  separateAgentUser: boolean;
+  recentlyBlocked: { host: string; at: string }[];
+}
+
 export interface RunDetail {
   run: Run;
   events: RunEvent[];
@@ -74,7 +87,7 @@ export const api = {
   updateWorkflow: (id: string, draft: WorkflowDraft) => request<Workflow>('PUT', `/workflows/${id}`, draft),
   deleteWorkflow: (id: string) => request('DELETE', `/workflows/${id}`),
   runWorkflow: (id: string, payload: unknown = {}) => request<Run>('POST', `/workflows/${id}/run`, payload),
-  mounts: (id: string) => request<{ target: string; present: boolean }[]>('GET', `/workflows/${id}/mounts`),
+  requirements: (id: string) => request<Requirements>('GET', `/workflows/${id}/requirements`),
 
   exportFormula: (id: string) => request<string>('GET', `/workflows/${id}/formula`),
   importFormula: (yaml: string) => request<Workflow>('POST', '/formulas/import', yaml, 'application/yaml'),
@@ -93,6 +106,7 @@ export const api = {
   secrets: () => request<string[]>('GET', '/secrets'),
   setSecret: (name: string, value: string) => request('PUT', `/secrets/${name}`, { value }),
   deleteSecret: (name: string) => request('DELETE', `/secrets/${name}`),
+  sandbox: () => request<SandboxStatus>('GET', '/sandbox'),
   settings: () => request<Settings>('GET', '/settings'),
   saveSettings: (settings: Settings) => request<Settings>('PUT', '/settings', settings),
 };

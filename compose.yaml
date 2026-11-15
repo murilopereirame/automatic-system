@@ -1,31 +1,54 @@
 # Hardened deployment of Auto Worker. See docs/DEPLOYMENT.md and docs/SECURITY.md.
 #
-#   cp .env.example .env    # then set AUTOWORKER_TOKEN and AUTOWORKER_SECRET_KEY
+#   cp .env.example .env    # then fill in the three secrets
 #   docker compose up -d
+#
+# Two containers from the same image:
+#
+#   autoworker  the app and the sandbox Claude works in. It sits on an internal
+#               network: no route to the internet, the host or other containers.
+#   gateway     the only way in and out. It relays the web UI port to the app
+#               and proxies outbound connections to hosts on the allow list.
+
+# Settings shared by both containers.
+x-hardening: &hardening
+  restart: unless-stopped
+  init: true
+  # No extra privileges, ever: setuid binaries such as sudo have no effect.
+  security_opt:
+    - no-new-privileges:true
+  # The image is immutable. Only volumes and tmpfs mounts are writable.
+  read_only: true
+  # Never add: privileged, the Docker socket, host network/pid/ipc, or devices.
 
 services:
   autoworker:
+    <<: *hardening
     image: ${AUTOWORKER_IMAGE:-ghcr.io/murilopereirame/automatic-system:latest}
     build: .
-    restart: unless-stopped
-    init: true
     environment:
       AUTOWORKER_TOKEN: ${AUTOWORKER_TOKEN:?Set AUTOWORKER_TOKEN in .env}
       AUTOWORKER_SECRET_KEY: ${AUTOWORKER_SECRET_KEY:?Set AUTOWORKER_SECRET_KEY in .env}
+      AUTOWORKER_GATEWAY_SECRET: ${AUTOWORKER_GATEWAY_SECRET:?Set AUTOWORKER_GATEWAY_SECRET in .env}
       AUTOWORKER_PUBLIC_URL: ${AUTOWORKER_PUBLIC_URL:-}
-    ports:
-      # Only reachable from the host itself. Put a TLS reverse proxy in front for remote access.
-      - "127.0.0.1:${AUTOWORKER_PORT:-8080}:8080"
+      # Hosts every sandbox may reach, in addition to what workflows allow.
+      AUTOWORKER_EGRESS_ALLOW: ${AUTOWORKER_EGRESS_ALLOW:-api.anthropic.com}
+      # Sandbox processes are pointed at this proxy, which enforces the allow list.
+      AUTOWORKER_EGRESS_PROXY: http://gateway:3128
+      # The server's own calls (ClickUp, GitHub, notifications) also leave through
+      # the gateway, authenticated with the gateway secret and therefore unrestricted.
+      NODE_USE_ENV_PROXY: "1"
+      HTTP_PROXY: http://server:${AUTOWORKER_GATEWAY_SECRET}@gateway:3128
+      HTTPS_PROXY: http://server:${AUTOWORKER_GATEWAY_SECRET}@gateway:3128
+      NO_PROXY: localhost,127.0.0.1
     volumes:
       - data:/data                 # database and encrypted secrets (server only)
       - workspaces:/workspaces     # run workspaces
       - agent-home:/home/agent     # Claude memory, skills, installed runtimes, caches
       - ./formulas:/formulas:ro    # formula files imported at startup (workflows as code)
-
-    # ---- Sandbox ------------------------------------------------------------
-    # No extra privileges, ever: setuid binaries such as sudo have no effect.
-    security_opt:
-      - no-new-privileges:true
+    tmpfs:
+      - /tmp:exec,mode=1777,size=2g
+      - /run:mode=755,size=16m
     # Drop every capability, then add back the three the server needs to start
     # and stop processes as the unprivileged agent user. Agent processes
     # themselves end up with no capabilities at all.
@@ -35,22 +58,36 @@ services:
       - SETUID
       - SETGID
       - KILL
-    # The image is immutable. Only the volumes and /tmp are writable.
-    read_only: true
-    tmpfs:
-      - /tmp:exec,mode=1777,size=2g
-      - /run:mode=755,size=16m
     # Limits against runaway processes.
     pids_limit: 2048
     mem_limit: ${AUTOWORKER_MEMORY:-8g}
     cpus: ${AUTOWORKER_CPUS:-4}
-    # Its own network: other compose projects and their containers are not on it.
     networks:
       - sandbox
-    # Never add: privileged, the Docker socket, host network/pid/ipc, or devices.
+
+  gateway:
+    <<: *hardening
+    image: ${AUTOWORKER_IMAGE:-ghcr.io/murilopereirame/automatic-system:latest}
+    command: ["node", "/app/server/dist/gateway/main.js"]
+    user: "10001:10001"
+    environment:
+      AUTOWORKER_GATEWAY_SECRET: ${AUTOWORKER_GATEWAY_SECRET:?Set AUTOWORKER_GATEWAY_SECRET in .env}
+    ports:
+      # Only reachable from the host itself. Put a TLS reverse proxy in front for remote access.
+      - "127.0.0.1:${AUTOWORKER_PORT:-8080}:8080"
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 256m
+    networks:
+      - sandbox
+      - outside
 
 networks:
+  # No gateway to the outside world: containers on it can only talk to each other.
   sandbox:
+    internal: true
+  outside:
     driver: bridge
 
 volumes:

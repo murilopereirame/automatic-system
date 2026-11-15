@@ -34,6 +34,9 @@ environment:                 # what the workflow needs around it
   runtimes: [{ name: node, version: "22" }]
   mcpServers: {}
   memory: [{ path: CLAUDE.md, content: "..." }]
+  skills: [{ name: pr-summary, content: "..." }]
+  services: [{ name: mongo, image: "mongo:7", ports: [27017] }]
+  network: { allow: [github.com, registry.npmjs.org] }
   env: { CI: "true" }
   secrets: [CLAUDE_CODE_OAUTH_TOKEN]
   mounts: []
@@ -97,9 +100,64 @@ A task starts a run at most once per workflow.
 | `runtimes` | Language runtimes, installed with [mise](https://mise.jdx.dev) before the first block runs. `name` and `version` as mise understands them |
 | `mcpServers` | MCP servers for Claude, in the format of the `mcpServers` object of a `.mcp.json` file. Use `${NAME}` to refer to environment variables and exposed secrets |
 | `memory` | Files for Claude's config directory, usually `CLAUDE.md`. They are written when the workflow is saved or imported. An export contains the files as they are on disk at that moment, so what Claude has learned travels with the formula |
+| `skills` | Claude Code skills, each a `name` and the `content` of its `SKILL.md`. Written to `skills/<name>/SKILL.md` in the workflow's Claude config directory. Like memory, an export contains the skills as they are on disk |
+| `services` | Helper containers such as a database for tests: `name`, `image`, `ports`, optional `env` and `command`. See [Services](#services) |
+| `network.allow` | Hosts the sandbox may connect to. See [Network](#network) |
 | `env` | Plain environment variables for Claude, commands and the web shell |
 | `secrets` | Names of stored secrets that are exposed as environment variables. Values are never part of a formula. After importing on a new deployment, add the values under Settings |
 | `mounts` | Volume mounts the workflow expects (`source`, `target`, `readOnly`). Mounts are created when the container starts, so this list documents the requirement and the UI shows which targets are missing |
+
+### Services
+
+The sandbox has no access to Docker, on purpose. Containers a workflow needs
+are therefore declared in the formula and started by compose as siblings of
+the sandbox:
+
+```mermaid
+flowchart LR
+    subgraph sandbox network
+        A[autoworker<br/>Claude, tests] -->|"mongo:27017"| M[(mongo)]
+        A -->|"redis:6379"| R[(redis)]
+    end
+```
+
+The Environment tab generates the compose snippet for the declared services
+and shows whether each port answers. A run waits up to a minute for its
+services and fails with a clear message when one is not deployed. Service
+containers sit on the internal network, so they have no internet access.
+
+### Network
+
+With the default deployment the sandbox has no direct route to the internet.
+Everything goes through the gateway, which only connects to hosts on the
+allow list:
+
+- `example.com` allows exactly that host.
+- `*.example.com` allows the domain and all its subdomains.
+- `*` allows every public host.
+
+Addresses of the host, the local network and cloud metadata services are
+never reachable through a wildcard. To allow an internal host, list it by its
+exact name.
+
+The effective list is `AUTOWORKER_EGRESS_ALLOW` (default `api.anthropic.com`)
+plus the lists of all enabled workflows. Refused connections are shown under
+Settings > Sandbox, so a missing host is easy to find.
+
+Typical entries:
+
+| Need | Hosts |
+|------|-------|
+| Clone, push, `gh` | `github.com`, `api.github.com`, `*.githubusercontent.com` |
+| npm, yarn, pnpm | `registry.npmjs.org`, `registry.yarnpkg.com` |
+| Runtimes through mise | `*.jdx.dev`, `nodejs.org`, `github.com` |
+| Playwright browsers | `cdn.playwright.dev`. If your Playwright version downloads from another host, it shows up under Settings > Sandbox |
+| Your staging system | its host name |
+
+Programs must honour the proxy variables (`HTTPS_PROXY` and friends), which
+are set for every sandbox process. git, npm, curl, gh and Claude Code do.
+A browser started by Playwright needs the proxy passed explicitly:
+`chromium.launch({ proxy: { server: process.env.HTTPS_PROXY } })`.
 
 ## Notifications
 
@@ -148,7 +206,7 @@ Every block has an `id` (unique, used in templates), a `type`, an optional
 | Type | What it does | Output |
 |------|--------------|--------|
 | `notify` | Calls the notification webhooks. `message`, optional `channel` (webhook name) | `delivered` |
-| `clickup_fetch_task` | Loads a ClickUp task. `taskId` | `id`, `name`, `description`, `url`, `status` |
+| `clickup_fetch_task` | Loads a ClickUp task. `taskId`, `includeComments`, `includeSubtasks`, `downloadAttachments` (saved to `task-attachments/` in the run workspace, next to the repository) | `id`, `name`, `description`, `url`, `status`, `comments`, `subtasks`, `attachments`, `attachmentFiles` |
 | `git_clone` | Clones a GitHub repository and creates the working branch. `repo` (`owner/name`), `baseBranch`, `branch`, `tokenSecret` | `owner`, `name`, `baseBranch`, `branch` |
 | `claude` | Runs Claude Code with a `prompt`. Optional `model`, `permissionMode`, `allowedTools`, `maxTurns`, `continueSession` | `result`, `sessionId`, `costUsd`, `turns` |
 | `shell` | Runs a `command` as the agent user, e.g. tests. `continueOnError` | `exitCode`, `passed`, `output` |

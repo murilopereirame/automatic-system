@@ -44,6 +44,7 @@ export function agentShellCommand(): { file: string; args: string[] } {
 export function baseEnv(): Record<string, string> {
   const miseShims = path.join(config.agentHome, '.local/share/mise/shims');
   return {
+    ...proxyEnv([]),
     HOME: config.agentHome,
     USER: 'agent',
     SHELL: '/bin/bash',
@@ -56,11 +57,32 @@ export function baseEnv(): Record<string, string> {
 }
 
 /**
+ * When the gateway is deployed, the sandbox has no direct route to the
+ * internet. These variables send its traffic through the gateway's proxy,
+ * which enforces the allow list. `directHosts` (the workflow's service
+ * containers) are reached without the proxy.
+ */
+function proxyEnv(directHosts: string[]): Record<string, string> {
+  if (!config.egressProxy) return {};
+  const noProxy = ['localhost', '127.0.0.1', ...directHosts].join(',');
+  return {
+    HTTP_PROXY: config.egressProxy,
+    HTTPS_PROXY: config.egressProxy,
+    http_proxy: config.egressProxy,
+    https_proxy: config.egressProxy,
+    NO_PROXY: noProxy,
+    no_proxy: noProxy,
+    // Lets Node.js programs (fetch, npm scripts) use the variables above.
+    NODE_USE_ENV_PROXY: '1',
+  };
+}
+
+/**
  * The environment Claude, commands and the web shell see for a workflow:
  * the formula's variables plus the secrets the formula explicitly exposes.
  */
 export function workflowEnv(workflow: Workflow): Record<string, string> {
-  const { env, secrets } = workflow.definition.environment;
+  const { env, secrets, services } = workflow.definition.environment;
   const exposedSecrets: Record<string, string> = {};
   for (const name of secrets) {
     const value = getSecret(name);
@@ -68,6 +90,7 @@ export function workflowEnv(workflow: Workflow): Record<string, string> {
   }
   return {
     ...baseEnv(),
+    ...proxyEnv(services.map((service) => service.name)),
     CLAUDE_CONFIG_DIR: claudeConfigDir(workflow.id),
     MISE_GLOBAL_CONFIG_FILE: path.join(workflowHome(workflow.id), 'mise.toml'),
     MISE_YES: '1',
@@ -80,7 +103,7 @@ export interface ExecOptions {
   cwd?: string;
   env?: Record<string, string>;
   /** Written to the process's stdin. */
-  input?: string;
+  input?: string | Buffer;
   /** Called with each chunk of stdout or stderr as it arrives. */
   onOutput?: (chunk: string, stream: 'stdout' | 'stderr') => void;
   signal?: AbortSignal;
@@ -155,7 +178,7 @@ export async function agentMkdir(dir: string): Promise<void> {
 }
 
 /** Writes a file owned by the agent user, creating parent directories. */
-export async function agentWriteFile(file: string, content: string): Promise<void> {
+export async function agentWriteFile(file: string, content: string | Buffer): Promise<void> {
   await agentExecOrThrow('sh', ['-c', 'mkdir -p "$(dirname "$1")" && cat > "$1"', 'sh', file], { cwd: '/', input: content });
 }
 
