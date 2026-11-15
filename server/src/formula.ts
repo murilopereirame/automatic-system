@@ -7,11 +7,13 @@
  * Secret values are never part of a formula, only their names.
  */
 import YAML from 'yaml';
-import { HttpError } from './errors.js';
+import { errorMessage, HttpError } from './errors.js';
+import { checkExpression } from './expression.js';
+import { END_OF_RUN } from './steps/condition.js';
 import { getStepType } from './steps/index.js';
 import type { WorkflowInput } from './store/workflows.js';
 import { getTriggerType } from './triggers/index.js';
-import { emptyEnvironment, type Environment, type MemoryFile, type NotificationWebhook, type SkillSpec, type StepConfig, type TriggerConfig, type Workflow, type WorkflowDefinition } from './types.js';
+import { emptyEnvironment, SCOPE_NAMES, type Environment, type MemoryFile, type NotificationWebhook, type SkillSpec, type StepConfig, type TriggerConfig, type Workflow, type WorkflowDefinition } from './types.js';
 
 export const FORMULA_API_VERSION = 'autoworker/v1';
 
@@ -88,9 +90,31 @@ function parseNotifications(input: unknown): NotificationWebhook[] {
   });
 }
 
+function checkCondition(expression: string, where: string): void {
+  try {
+    checkExpression(expression, SCOPE_NAMES);
+  } catch (error) {
+    invalid(`${where}: ${errorMessage(error)}`);
+  }
+}
+
+/** Checks the settings that only make sense once all blocks are known: expressions and the blocks a condition continues with. */
+function checkStepSettings(step: StepConfig, ids: Set<string>): void {
+  if (step.if !== undefined) checkCondition(step.if, `"if" of step "${step.id}"`);
+  for (const field of getStepType(step.type)!.fields) {
+    const value = step.with[field.key];
+    if (value === undefined || value === null || value === '') continue;
+    if (field.type === 'expression') checkCondition(String(value), `"${field.key}" of step "${step.id}"`);
+    if (field.type === 'target' && value !== END_OF_RUN) {
+      if (value === step.id) invalid(`"${field.key}" of step "${step.id}" points at the step itself`);
+      if (!ids.has(String(value))) invalid(`"${field.key}" of step "${step.id}" names "${value}", which is not a step. Use a step id or "${END_OF_RUN}"`);
+    }
+  }
+}
+
 function parseSteps(input: unknown): StepConfig[] {
   const ids = new Set<string>();
-  return asArray(input, 'steps').map((item, index) => {
+  const steps = asArray(input, 'steps').map((item, index): StepConfig => {
     const raw = asObject(item, `step ${index + 1}`);
     const type = String(raw.type ?? '');
     if (!getStepType(type)) invalid(`step ${index + 1} has unknown type "${type}"`);
@@ -98,8 +122,11 @@ function parseSteps(input: unknown): StepConfig[] {
     if (!/^[\w-]+$/.test(id)) invalid(`step id "${id}" may only contain letters, digits, "_" and "-"`);
     if (ids.has(id)) invalid(`step id "${id}" is used more than once`);
     ids.add(id);
-    return { id, type, name: raw.name ? String(raw.name) : undefined, with: asObject(raw.with, `settings of step "${id}"`) };
+    const condition = raw.if === undefined || raw.if === null || String(raw.if).trim() === '' ? undefined : String(raw.if);
+    return { id, type, name: raw.name ? String(raw.name) : undefined, ...(condition !== undefined && { if: condition }), with: asObject(raw.with, `settings of step "${id}"`) };
   });
+  for (const step of steps) checkStepSettings(step, ids);
+  return steps;
 }
 
 /**

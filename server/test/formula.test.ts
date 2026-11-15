@@ -32,6 +32,22 @@ test('rejects unknown block types and duplicate ids', () => {
   assert.throws(() => parseFormula(formula('  - { id: a, type: shell }\n  - { id: a, type: shell }')), /used more than once/);
 });
 
+test('reads conditions and checks them on import', () => {
+  const formula = (steps: string) => parseFormula(`apiVersion: autoworker/v1\nkind: Formula\nmetadata: { name: x }\nsteps:\n${steps}`).definition.steps;
+  const steps = formula(`  - { id: tests, type: shell, with: { command: npm test, continueOnError: true } }
+  - { id: check, type: condition, with: { expression: steps.tests.output.passed, then: done, else: $end } }
+  - { id: done, type: notify, if: "trigger.task.priority == 'urgent'", with: { message: ok } }`);
+  assert.equal(steps[2].if, "trigger.task.priority == 'urgent'");
+  assert.equal('if' in steps[0], false, 'blocks without a condition have no "if" key');
+  assert.deepEqual(steps[1].with, { expression: 'steps.tests.output.passed', then: 'done', else: '$end' });
+
+  assert.throws(() => formula('  - { id: a, type: shell, if: "trigger.x ==" }'), /"if" of step "a": Expected a value/);
+  assert.throws(() => formula('  - { id: a, type: shell, if: "task.name" }'), /Unknown name "task". Available: trigger, triggeredBy, steps, previous, run, repo/);
+  assert.throws(() => formula('  - { id: a, type: condition, with: { expression: "steps.a = 1" } }'), /"expression" of step "a": Unexpected "="/);
+  assert.throws(() => formula('  - { id: a, type: condition, with: { expression: "true", then: nowhere } }'), /names "nowhere", which is not a step/);
+  assert.throws(() => formula('  - { id: a, type: condition, with: { expression: "true", else: a } }'), /points at the step itself/);
+});
+
 const withTriggers = (yaml: string) => parseFormula(`apiVersion: autoworker/v1\nkind: Formula\nmetadata: { name: x }\n${yaml}`).definition.triggers;
 
 test('reads several triggers and gives each an id', () => {

@@ -3,9 +3,13 @@
  * run. Any trigger starts a run. Blocks can be added between any two blocks,
  * reordered by dragging or with the arrow buttons, and expanded to edit their
  * settings.
+ *
+ * Conditions show on the block itself: a block with "Run only if" carries its
+ * expression in the header, and a condition block shows where each outcome
+ * continues.
  */
 import { useState } from 'react';
-import type { BlockType, Meta, StepConfig, TriggerConfig } from '../api.ts';
+import type { BlockType, FieldSpec, Meta, StepConfig, TriggerConfig } from '../api.ts';
 import { FieldInput } from './FieldInput.tsx';
 
 interface Props {
@@ -39,6 +43,23 @@ function hookUrl(trigger: TriggerConfig, hooks: NonNullable<Props['hooks']>): st
   if (trigger.type === 'webhook') return `${url}?secret=${hooks.secret}`;
   if (trigger.type === 'clickup' && trigger.with.mode === 'webhook') return url;
   return undefined;
+}
+
+/** `if` setting shared by all blocks. Rendered like any other field, but stored on the block instead of under `with`. */
+const RUN_ONLY_IF: FieldSpec = {
+  key: 'if',
+  label: 'Run only if',
+  type: 'expression',
+  placeholder: 'Always runs',
+  help: "Optional. The block is skipped when this is false, e.g. steps.tests.output.passed or trigger.task.priority == 'urgent'. Use previous.output for the block above.",
+};
+
+/** Where a condition block continues for one outcome, in words. */
+function targetLabel(target: unknown, steps: StepConfig[]): string {
+  if (!target) return 'next block';
+  if (target === '$end') return 'finish the run';
+  const step = steps.find((candidate) => candidate.id === target);
+  return step?.name || String(target);
 }
 
 export function BlockPipeline({ meta, triggers, steps, secretNames, hooks, onTriggersChange, onStepsChange }: Props) {
@@ -145,6 +166,16 @@ export function BlockPipeline({ meta, triggers, steps, secretNames, hooks, onTri
                   <span className="muted">
                     {type?.title ?? `Unknown block type "${step.type}"`} · <code>{step.id}</code>
                   </span>
+                  {step.if && (
+                    <span className="block-condition-note">
+                      only if <code>{step.if}</code>
+                    </span>
+                  )}
+                  {step.type === 'condition' && (
+                    <span className="block-condition-note">
+                      if <code>{String(step.with.expression ?? '')}</code> → {targetLabel(step.with.then, steps)}, else → {targetLabel(step.with.else, steps)}
+                    </span>
+                  )}
                 </span>
                 <span className="block-actions" onClick={(event) => event.stopPropagation()}>
                   <button className="ghost" onClick={() => move(index, index - 1)} disabled={index === 0} title="Move up">
@@ -175,6 +206,7 @@ export function BlockPipeline({ meta, triggers, steps, secretNames, hooks, onTri
                       </small>
                     </label>
                   </div>
+                  <FieldInput field={RUN_ONLY_IF} value={step.if} secretNames={secretNames} earlierSteps={[]} onChange={(value) => update(index, { if: value ? String(value) : undefined })} />
                   {type.fields.map((field) => (
                     <FieldInput
                       key={field.key}
@@ -182,6 +214,7 @@ export function BlockPipeline({ meta, triggers, steps, secretNames, hooks, onTri
                       value={step.with[field.key]}
                       secretNames={secretNames}
                       earlierSteps={steps.slice(0, index).map((earlier) => ({ id: earlier.id, label: earlier.name || earlier.id }))}
+                      otherSteps={steps.filter((other) => other !== step).map((other) => ({ id: other.id, label: other.name || other.id }))}
                       onChange={(value) => update(index, { with: { ...step.with, [field.key]: value } })}
                     />
                   ))}

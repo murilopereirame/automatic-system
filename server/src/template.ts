@@ -8,9 +8,17 @@
  * A value can be passed through a filter: `{{ message | json }}` renders a
  * JSON literal (strings come out quoted and escaped, ready for a JSON body)
  * and `{{ message | url }}` percent-encodes it for use inside a URL.
+ *
+ * `{{= ... }}` holds an expression instead of a path, e.g.
+ * `{{= steps.tests.output.passed ? 'passed' : 'failed' }}`. Filters work the
+ * same way. See expression.ts.
  */
+import { evaluate } from './expression.js';
 
-const PLACEHOLDER = /\{\{\s*([\w.-]+)\s*(?:\|\s*(\w+)\s*)?\}\}/g;
+/** Either `{{= expression }}` or `{{ dotted.path }}`, each with an optional `| filter`. */
+const PLACEHOLDER = /\{\{=(.+?)\}\}|\{\{\s*([\w.-]+)\s*(?:\|\s*(\w+)\s*)?\}\}/gs;
+/** Splits `expression | filter`. A single `|` starts the filter; `||` is the "or" of the expression. */
+const EXPRESSION_WITH_FILTER = /^(.*?)(?:(?<!\|)\|(?!\|)\s*(\w+)\s*)?$/s;
 
 const filters: Record<string, (value: unknown) => string> = {
   json: (value) => JSON.stringify(value ?? ''),
@@ -31,12 +39,17 @@ export function lookup(scope: unknown, dottedPath: string): unknown {
   return value;
 }
 
+function applyFilter(value: unknown, filter: string | undefined): string {
+  if (!filter) return plain(value);
+  if (!filters[filter]) throw new Error(`Unknown template filter "${filter}". Available: ${Object.keys(filters).join(', ')}`);
+  return filters[filter](value);
+}
+
 export function renderString(template: string, scope: unknown): string {
-  return template.replace(PLACEHOLDER, (_match, dottedPath: string, filter?: string) => {
-    const value = lookup(scope, dottedPath);
-    if (!filter) return plain(value);
-    if (!filters[filter]) throw new Error(`Unknown template filter "${filter}". Available: ${Object.keys(filters).join(', ')}`);
-    return filters[filter](value);
+  return template.replace(PLACEHOLDER, (_match, expression: string | undefined, dottedPath: string, pathFilter?: string) => {
+    if (expression === undefined) return applyFilter(lookup(scope, dottedPath), pathFilter);
+    const [, source, filter] = EXPRESSION_WITH_FILTER.exec(expression)!;
+    return applyFilter(evaluate(source, scope as Record<string, unknown>), filter);
   });
 }
 

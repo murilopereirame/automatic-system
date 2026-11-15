@@ -53,6 +53,7 @@ steps:                       # the blocks, in order
   - id: implement
     type: claude
     name: Implement the task
+    if: "trigger.task.status != 'done'"   # optional condition
     with: { prompt: "..." }
 ```
 
@@ -74,6 +75,11 @@ Filters prepare a value for where it is used:
 
 - `{{ message | json }}` renders a JSON literal, with quotes and escaping. Use it inside JSON bodies.
 - `{{ message | url }}` percent-encodes the value. Use it inside URLs.
+
+A placeholder that starts with `=` holds an expression instead of a path:
+`{{= steps.tests.output.passed ? 'passed' : 'failed' }}`. The language is
+described in [EXPRESSIONS.md](EXPRESSIONS.md). `{{previous.output...}}` reads
+the block directly above.
 
 ## Triggers
 
@@ -241,7 +247,9 @@ notifications:
 ## Blocks
 
 Every block has an `id` (unique, used in templates), a `type`, an optional
-`name` and its settings under `with`.
+`name` and its settings under `with`. A block may also have an `if`
+expression: when it is false the run skips the block. See
+[EXPRESSIONS.md](EXPRESSIONS.md).
 
 | Type | What it does | Output |
 |------|--------------|--------|
@@ -251,6 +259,7 @@ Every block has an `id` (unique, used in templates), a `type`, an optional
 | `claude` | Runs Claude Code with a `prompt`. Optional `model`, `permissionMode`, `allowedTools`, `maxTurns`, `continueSession` | `result`, `sessionId`, `costUsd`, `turns` |
 | `shell` | Runs a `command` as the agent user, e.g. tests. `continueOnError` | `exitCode`, `passed`, `output` |
 | `approval` | Pauses until you approve or reject. `message`, optional `onReject` (id of an earlier block) | `decision`, `comment` |
+| `condition` | An if/else. `expression`, optional `then` and `else` (a block id, or `$end` to finish the run), `maxRepeats`. See [EXPRESSIONS.md](EXPRESSIONS.md) | `result`, `branch`, `goTo` |
 | `github_pr` | Commits what is left, pushes the branch and opens a pull request as the owner of the token. `title`, `body`, `base`, `draft`, `tokenSecret` | `url`, `number`, `branch` |
 | `clickup_comment` | Comments on a ClickUp task. `taskId`, `comment` | `comment` |
 

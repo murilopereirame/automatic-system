@@ -11,6 +11,10 @@
  * `run.stepIndex` always points at the step that is running, waiting for a
  * human, or that failed. That is what makes "retry" and "resume after
  * approval" simple: execution just continues from `stepIndex`.
+ *
+ * Steps normally run in list order. Conditions change that in two ways: a
+ * step whose `if` is false is skipped, and a condition block can name the
+ * step the run continues with (see `jump`).
  */
 import { config } from '../config.js';
 import { errorMessage } from '../errors.js';
@@ -19,10 +23,12 @@ import { agentExec, agentMkdir, workflowEnv } from '../sandbox/agent.js';
 import { prepareEnvironment } from '../sandbox/environment.js';
 import * as runs from '../store/runs.js';
 import { getWorkflow } from '../store/workflows.js';
+import { evaluate, truthy } from '../expression.js';
+import { END_OF_RUN } from '../steps/condition.js';
 import { getStepType } from '../steps/index.js';
-import type { StepRuntime } from '../steps/types.js';
+import { text, type StepRuntime } from '../steps/types.js';
 import { renderDeep } from '../template.js';
-import { MANUAL_TRIGGER, type Run, type StepConfig, type TriggerRef, type Workflow } from '../types.js';
+import { MANUAL_TRIGGER, type Run, type SCOPE_NAMES, type StepConfig, type TriggerRef, type Workflow } from '../types.js';
 
 /** Abort handles of the runs that are executing right now, by run id. */
 const activeRuns = new Map<string, AbortController>();
@@ -53,9 +59,9 @@ export async function executeRun(runId: string): Promise<void> {
 
     while (run.stepIndex < run.definition.steps.length) {
       const step = run.definition.steps[run.stepIndex];
-      const paused = await executeStep(run, workflow, step, controller.signal);
-      if (paused) return;
-      run.stepIndex += 1;
+      const next = await executeStep(run, workflow, step, controller.signal);
+      if (next === 'paused') return;
+      run.stepIndex = next;
       runs.saveRun(run);
     }
     finish(run, 'succeeded');
@@ -71,13 +77,19 @@ export async function executeRun(runId: string): Promise<void> {
   }
 }
 
-/** Executes one step. Returns true when the run is now waiting for a human. */
-async function executeStep(run: Run, workflow: Workflow, step: StepConfig, signal: AbortSignal): Promise<boolean> {
+/** Executes one step. Returns the index of the step to continue with, or 'paused' when the run is now waiting for a human. */
+async function executeStep(run: Run, workflow: Workflow, step: StepConfig, signal: AbortSignal): Promise<number | 'paused'> {
   const stepType = getStepType(step.type);
   if (!stepType) throw new Error(`Unknown block type "${step.type}"`);
+  const scope = scopeFor(run);
+
+  if (step.if && !truthy(evaluate(step.if, scope))) {
+    skip(run, step, `its condition is false: ${step.if}`);
+    return run.stepIndex + 1;
+  }
 
   runs.addEvent(run.id, step.id, 'step_started', { type: step.type, name: step.name ?? stepType.title });
-  const result = await stepType.execute(buildRuntime(run, workflow, step, signal));
+  const result = await stepType.execute(buildRuntime(run, workflow, step, scope, signal));
   signal.throwIfAborted();
 
   if ('pause' in result) {
@@ -86,25 +98,68 @@ async function executeStep(run: Run, workflow: Workflow, step: StepConfig, signa
     runs.saveRun(run);
     runs.addEvent(run.id, step.id, 'approval_requested', { approvalId: approval.id, message: approval.message });
     void sendNotification(run, { title: `${run.workflowName}: your action is needed`, message: approval.message });
-    return true;
+    return 'paused';
   }
 
   run.context.steps[step.id] = { output: result.output ?? null };
   runs.addEvent(run.id, step.id, 'step_finished', { output: result.output ?? null });
-  return false;
+  return result.goTo ? jump(run, step, result.goTo) : run.stepIndex + 1;
 }
 
-function buildRuntime(run: Run, workflow: Workflow, step: StepConfig, signal: AbortSignal): StepRuntime {
+/** The values the current step can read. `previous` is the block right above it in the list. */
+function scopeFor(run: Run): Record<(typeof SCOPE_NAMES)[number], unknown> {
+  const context = run.context;
+  const above = run.definition.steps[run.stepIndex - 1];
+  return {
+    trigger: context.trigger,
+    triggeredBy: context.triggeredBy,
+    steps: context.steps,
+    previous: (above && context.steps[above.id]) ?? { output: null },
+    run: { id: run.id },
+    repo: context.repo,
+  };
+}
+
+/** Records that the run passed over a step. Its output reads as empty from then on. */
+function skip(run: Run, step: StepConfig, reason: string): void {
+  run.context.steps[step.id] = { output: null, skipped: true };
+  runs.addEvent(run.id, step.id, 'step_skipped', { name: step.name ?? step.id, reason });
+}
+
+/**
+ * Works out where the run continues after `step` asked to go to `target`: a
+ * block id, or END_OF_RUN. Blocks that are jumped over are marked as skipped.
+ * Going back to an earlier block is counted per step and limited by its
+ * `maxRepeats` setting, so a condition that never becomes true fails the run
+ * instead of looping forever.
+ */
+function jump(run: Run, step: StepConfig, target: string): number {
+  const steps = run.definition.steps;
+  const from = run.stepIndex;
+  const to = target === END_OF_RUN ? steps.length : steps.findIndex((candidate) => candidate.id === target);
+  if (to === -1) throw new Error(`Block "${target}" does not exist`);
+
+  if (to <= from) {
+    const limit = Number(text(step.with, 'maxRepeats', '3'));
+    const repeats = (run.context.repeats ??= {});
+    if ((repeats[step.id] ?? 0) >= limit) throw new Error(`"${step.name ?? step.id}" already went back ${limit} times. Giving up instead of looping forever.`);
+    repeats[step.id] = (repeats[step.id] ?? 0) + 1;
+  }
+  for (const passed of steps.slice(from + 1, to)) skip(run, passed, `"${step.name ?? step.id}" continued with ${target === END_OF_RUN ? 'the end of the run' : `"${target}"`}`);
+  return to;
+}
+
+function buildRuntime(run: Run, workflow: Workflow, step: StepConfig, scope: Record<string, unknown>, signal: AbortSignal): StepRuntime {
   const context = run.context;
   const log = (type: string, data: Record<string, unknown> = {}) => void runs.addEvent(run.id, step.id, type, data);
-  const templateScope = { trigger: context.trigger, triggeredBy: context.triggeredBy, steps: context.steps, run: { id: run.id }, repo: context.repo };
 
   return {
     run,
     workflow,
     step,
     context,
-    params: renderDeep(step.with, templateScope),
+    scope,
+    params: renderDeep(step.with, scope),
     workdir: context.workdir ?? run.workspace,
     signal,
     log,

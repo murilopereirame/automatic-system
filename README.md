@@ -40,6 +40,7 @@ flowchart LR
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components, run life cycle, data model, with diagrams |
 | [docs/UI.md](docs/UI.md) | The web UI: pages, editor, run view, with screenshots |
 | [docs/FORMULA.md](docs/FORMULA.md) | Formula reference: triggers, environment, notifications, blocks, templates |
+| [docs/EXPRESSIONS.md](docs/EXPRESSIONS.md) | Conditions: skipping blocks, if/else, and the expression language |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Running it with Docker, first workflow, volumes, updating, CI/CD |
 | [docs/SECURITY.md](docs/SECURITY.md) | How the sandbox works, what is verified on every build, known limits |
 | [docs/CAPABILITIES.md](docs/CAPABILITIES.md) | What an agent needs for a real task and where each need is covered |

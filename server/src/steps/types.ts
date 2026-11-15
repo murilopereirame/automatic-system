@@ -8,6 +8,8 @@ export interface StepRuntime {
   step: StepConfig;
   /** Shared, mutable run state. Changes are persisted when the step finishes. */
   context: RunContext;
+  /** The values templates and expressions can read: trigger, steps, previous, run, repo. */
+  scope: Record<string, unknown>;
   /** The step's settings with `{{ templates }}` already rendered. */
   params: Record<string, unknown>;
   /** Directory commands run in: the cloned repository, or the empty run workspace. */
@@ -25,8 +27,9 @@ export interface StepRuntime {
 /**
  * Returning `pause` stops the run until a human answers in the UI.
  * Anything in `output` becomes available to later steps as `{{steps.<id>.output}}`.
+ * `goTo` names the block the run continues with, instead of the next one.
  */
-export type StepResult = { output?: unknown } | { pause: { message: string } };
+export type StepResult = { output?: unknown; goTo?: string } | { pause: { message: string } };
 
 /** A block type. To add a new block, create a file like the others and register it in `steps/index.ts`. */
 export interface StepType {
