@@ -15,11 +15,6 @@ flowchart LR
     RS[Runs] --> R
     I[Inbox] -->|open run| R
     S[Settings]
-
-    subgraph E2[Workflow editor tabs]
-        B[Blocks] ~~~ EN[Environment] ~~~ N[Notifications] ~~~ C[Code]
-    end
-    E --- E2
 ```
 
 | Page | What you do there |
