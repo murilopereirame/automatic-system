@@ -1,0 +1,164 @@
+# Example formula: implement ClickUp tasks assigned to me and open a pull request.
+#
+# Import it in the web UI (Workflows > Import formula) or drop it into the
+# directory configured as AUTOWORKER_FORMULAS_DIR. Before enabling it, add
+# these secrets under Settings > Secrets:
+#   CLICKUP_TOKEN            personal ClickUp API token
+#   GITHUB_TOKEN             GitHub token of the account that should own the PR
+#   CLAUDE_CODE_OAUTH_TOKEN  created with `claude setup-token` (or use ANTHROPIC_API_KEY)
+#   NTFY_TOPIC               topic name for phone notifications (or change the webhook below)
+apiVersion: autoworker/v1
+kind: Formula
+metadata:
+  name: ClickUp task to pull request
+  description: Implements ClickUp tasks assigned to me and opens a pull request after my approval.
+  enabled: false
+
+trigger:
+  type: clickup
+  with:
+    mode: poll
+    pollSeconds: 60
+
+environment:
+  runtimes:
+    - name: node
+      version: "22"
+  mcpServers: {}
+  memory:
+    - path: CLAUDE.md
+      content: |
+        # Working agreements
+        - Keep changes small and focused on the task.
+        - Run the test suite before you say you are done.
+        - Commit your work with clear messages. Never push; pushing happens after human approval.
+  # Claude Code skills, stored as skills/<name>/SKILL.md in the workflow's Claude config.
+  skills:
+    - name: pr-summary
+      content: |
+        ---
+        name: pr-summary
+        description: Use when asked to summarise a change for a pull request description.
+        ---
+        Write a short summary of what changed and why, a list of the main changes,
+        and how it was tested (commands and results). Do not include secrets or
+        internal URLs.
+  # Helper containers for tests. Add them to the deployment with the snippet
+  # the Environment tab generates. The sandbox reaches this one as mongo:27017.
+  services:
+    - name: mongo
+      image: mongo:7
+      ports: [27017]
+      env: {}
+  # Hosts the sandbox may connect to. Everything else is refused by the gateway.
+  network:
+    allow:
+      - github.com
+      - api.github.com
+      - "*.githubusercontent.com"
+      - registry.npmjs.org
+      - nodejs.org
+      - "*.jdx.dev"
+      - cdn.playwright.dev
+  env:
+    CI: "true"
+    MONGODB_URI: mongodb://mongo:27017/test
+  secrets:
+    - CLAUDE_CODE_OAUTH_TOKEN
+  mounts: []
+
+# Notifications are webhook calls. URL, headers and body are templates.
+# This one posts to ntfy.sh; NTFY_TOPIC is a stored secret.
+notifications:
+  - name: phone
+    url: "https://ntfy.sh/{{secrets.NTFY_TOPIC | url}}"
+    method: POST
+    headers:
+      Content-Type: text/plain
+      Title: "{{title}}"
+      Click: "{{run.url}}"
+    body: "{{message}}"
+
+steps:
+  - id: notify_start
+    type: notify
+    name: Tell me a task was picked up
+    with:
+      message: "Picked up ClickUp task: {{trigger.task.name}} ({{trigger.task.url}})"
+
+  - id: task
+    type: clickup_fetch_task
+    name: Fetch the task
+    with:
+      taskId: "{{trigger.task.id}}"
+      includeComments: true
+      includeSubtasks: true
+      downloadAttachments: true
+
+  - id: clone
+    type: git_clone
+    name: Clone the repository
+    with:
+      repo: your-org/your-repo
+      branch: "autoworker/{{trigger.task.id}}"
+
+  - id: implement
+    type: claude
+    name: Implement the task
+    with:
+      prompt: |
+        Implement this ClickUp task in the current repository.
+
+        Title: {{steps.task.output.name}}
+        Link: {{steps.task.output.url}}
+
+        {{steps.task.output.description}}
+
+        Comments: {{steps.task.output.comments}}
+        Subtasks: {{steps.task.output.subtasks}}
+        Attachments were downloaded to: {{steps.task.output.attachmentFiles}}
+
+        Read the existing code first and follow its conventions. Add or update tests, run them, and commit your work when they pass.
+
+  - id: staging
+    type: approval
+    name: Deploy to staging
+    with:
+      message: The implementation is ready. Deploy the branch to staging (use the shell on this run if needed), then approve to let Claude continue with testing.
+      onReject: implement
+
+  - id: verify
+    type: claude
+    name: Test against staging
+    with:
+      prompt: The change is deployed to staging. Run the remaining checks, fix what fails, and summarise the change for a pull request description.
+
+  - id: tests
+    type: shell
+    name: Run the test suite
+    with:
+      command: npm test
+
+  - id: final_approval
+    type: approval
+    name: Final approval before the pull request
+    with:
+      message: "All checks passed for {{steps.task.output.name}}. Approve to push the branch and open the pull request in your name."
+      onReject: verify
+
+  - id: pull_request
+    type: github_pr
+    name: Push and open the pull request
+    with:
+      title: "{{steps.task.output.name}}"
+      body: |
+        ClickUp: {{steps.task.output.url}}
+
+        {{steps.verify.output.result}}
+
+  - id: link_back
+    type: clickup_comment
+    name: Link the pull request on the task
+    with:
+      taskId: "{{trigger.task.id}}"
+      comment: "Pull request: {{steps.pull_request.output.url}}"
