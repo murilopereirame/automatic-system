@@ -4,7 +4,7 @@
  */
 import { config } from '../config.js';
 import { mcpConfigPath } from '../sandbox/environment.js';
-import { flag, text, type StepRuntime, type StepType } from './types.js';
+import { blockCwd, cwdField, flag, text, type StepRuntime, type StepType } from './types.js';
 
 interface ClaudeResult {
   result?: string;
@@ -14,8 +14,11 @@ interface ClaudeResult {
 }
 
 /** Translates one line of Claude's stream-json output into zero or more log entries. */
-function logClaudeMessage(message: any, runtime: StepRuntime): void {
-  if (message.session_id) runtime.context.claudeSessionId = message.session_id;
+function logClaudeMessage(message: any, runtime: StepRuntime, cwd: string): void {
+  if (message.session_id) {
+    runtime.context.claudeSessionId = message.session_id;
+    runtime.context.claudeSessionDir = cwd;
+  }
 
   if (message.type === 'assistant') {
     for (const block of message.message?.content ?? []) {
@@ -31,7 +34,7 @@ function logClaudeMessage(message: any, runtime: StepRuntime): void {
   }
 }
 
-function buildArgs(runtime: StepRuntime, prompt: string): string[] {
+function buildArgs(runtime: StepRuntime, prompt: string, cwd: string): string[] {
   const { params, context, workflow } = runtime;
   const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose'];
   args.push('--permission-mode', text(params, 'permissionMode', 'bypassPermissions'));
@@ -42,7 +45,13 @@ function buildArgs(runtime: StepRuntime, prompt: string): string[] {
     args.push('--mcp-config', mcpConfigPath(workflow.id));
   }
   if (flag(params, 'continueSession', true) && context.claudeSessionId) {
-    args.push('--resume', context.claudeSessionId);
+    // Sessions from before the folder was recorded were always in the default working directory.
+    const sessionDir = context.claudeSessionDir ?? runtime.workdir;
+    if (sessionDir === cwd) {
+      args.push('--resume', context.claudeSessionId);
+    } else {
+      runtime.log('claude_new_session', { reason: 'The earlier conversation belongs to another folder, so this block starts a new one.' });
+    }
   }
   return args;
 }
@@ -73,10 +82,15 @@ export const claudeStep: StepType = {
     { key: 'permissionMode', label: 'Permission mode', type: 'select', options: ['bypassPermissions', 'acceptEdits', 'plan', 'default'], default: 'bypassPermissions' },
     { key: 'allowedTools', label: 'Allowed tools', type: 'text', placeholder: 'All tools', help: 'Comma separated, e.g. Read,Edit,Bash(npm test:*)' },
     { key: 'maxTurns', label: 'Maximum turns', type: 'number' },
+    {
+      ...cwdField,
+      help: `${cwdField.help} Claude keeps one conversation per folder: to continue a conversation, run the Claude blocks in the same folder (with several repositories, use "." and tell Claude which folder to work in).`,
+    },
   ],
   async execute(runtime) {
     const prompt = promptFor(runtime);
     if (!prompt) throw new Error('No prompt configured');
+    const cwd = blockCwd(runtime);
     runtime.log('claude_prompt', { prompt });
 
     let final: ClaudeResult | undefined;
@@ -86,13 +100,14 @@ export const claudeStep: StepType = {
       try {
         const message = JSON.parse(line);
         if (message.type === 'result') final = message;
-        logClaudeMessage(message, runtime);
+        logClaudeMessage(message, runtime, cwd);
       } catch {
         runtime.log('output', { text: line });
       }
     };
 
-    const result = await runtime.exec(config.claudeBin, buildArgs(runtime, prompt), {
+    const result = await runtime.exec(config.claudeBin, buildArgs(runtime, prompt, cwd), {
+      cwd,
       quiet: true,
       onOutput: (chunk, stream) => {
         if (stream === 'stderr') return runtime.log('output', { text: chunk, stream });

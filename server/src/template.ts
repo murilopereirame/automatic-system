@@ -8,6 +8,8 @@
  * A value can be passed through a filter: `{{ message | json }}` renders a
  * JSON literal (strings come out quoted and escaped, ready for a JSON body)
  * and `{{ message | url }}` percent-encodes it for use inside a URL.
+ * `{{ task.name | slug }}` turns text into a short lowercase-and-hyphens
+ * name that is safe in a git branch, e.g. `Fix the login page!` -> `fix-the-login-page`.
  *
  * `{{= ... }}` holds an expression instead of a path, e.g.
  * `{{= steps.tests.output.passed ? 'passed' : 'failed' }}`. Filters work the
@@ -23,7 +25,24 @@ const EXPRESSION_WITH_FILTER = /^(.*?)(?:(?<!\|)\|(?!\|)\s*(\w+)\s*)?$/s;
 const filters: Record<string, (value: unknown) => string> = {
   json: (value) => JSON.stringify(value ?? ''),
   url: (value) => encodeURIComponent(plain(value)),
+  slug: (value) => slugify(plain(value)),
 };
+
+const SLUG_MAX = 48;
+
+/** Lowercase ASCII letters, digits and single hyphens, at most SLUG_MAX characters, cut at a word boundary when possible. */
+export function slugify(text: string): string {
+  const slug = text
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (slug.length <= SLUG_MAX) return slug;
+  const cut = slug.slice(0, SLUG_MAX + 1);
+  const boundary = cut.lastIndexOf('-');
+  return (boundary > SLUG_MAX / 2 ? cut.slice(0, boundary) : slug.slice(0, SLUG_MAX)).replace(/-+$/, '');
+}
 
 function plain(value: unknown): string {
   if (value === undefined || value === null) return '';

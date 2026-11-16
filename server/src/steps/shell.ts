@@ -1,4 +1,4 @@
-import { flag, text, type StepType } from './types.js';
+import { blockCwd, cwdField, flag, text, type StepType } from './types.js';
 
 const OUTPUT_TAIL = 20_000;
 
@@ -9,11 +9,13 @@ export const shellStep: StepType = {
   fields: [
     { key: 'command', label: 'Command', type: 'textarea', placeholder: 'npm ci && npm test' },
     { key: 'continueOnError', label: 'Continue when the command fails', type: 'boolean', default: false },
+    cwdField,
   ],
-  async execute({ params, exec }) {
+  async execute(runtime) {
+    const { params, exec } = runtime;
     const command = text(params, 'command');
     if (!command) throw new Error('No command configured');
-    const result = await exec('bash', ['-lc', command]);
+    const result = await exec('bash', ['-lc', command], { cwd: blockCwd(runtime) });
     const output = (result.stdout + result.stderr).slice(-OUTPUT_TAIL);
     if (result.code !== 0 && !flag(params, 'continueOnError')) {
       throw new Error(`Command failed with exit code ${result.code}`);

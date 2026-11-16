@@ -86,6 +86,7 @@ block may go back only `maxRepeats` times. After that the run fails, and
 | `previous` | The block directly above this one: `previous.output...`, `previous.skipped` |
 | `run` | `run.id` |
 | `repo` | `repo.branch`, `repo.baseBranch`, `repo.owner`, `repo.name`, once a clone block ran |
+| `repos` | Every clone by its folder: `repos.frontend.branch`, `repos.backend.baseBranch`, ... |
 
 What a block puts in its output is listed in the block table of
 [FORMULA.md](FORMULA.md#blocks). A value that does not exist is `null`, not an

@@ -55,7 +55,9 @@ docker compose up -d
 
 Open http://localhost:8080, sign in with the token, and import
 `examples/clickup-to-pr.formula.yaml` on the Workflows page to see a complete
-workflow as blocks. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) has the details.
+workflow as blocks. `examples/task-to-pull-requests.formula.yaml` goes further:
+features and bug fixes across a backend and a frontend repository, with a
+plan review, fix loops, staging verification and a pull request per repository. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) has the details.
 
 To run it without Docker for development, see
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Outside the container there is no

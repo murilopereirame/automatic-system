@@ -36,3 +36,12 @@ test('evaluates {{= expressions }} and leaves other braces alone', () => {
   assert.equal(renderString('{{= steps.build.output.files }} ${{ a b }} {{ a b }}', scope), '["a"] ${{ a b }} {{ a b }}');
   assert.throws(() => renderString('{{= trigger.task.name == }}', scope), /Expected a value/);
 });
+
+test('the slug filter makes text safe for a branch name', () => {
+  const scope = { task: { id: '86a8y386n', name: "Bank Reconciliation: allow 'REVERSE & RE-POST' of transactions in a Saved Reconciliation" } };
+  assert.equal(renderString('{{task.id}}-{{task.name | slug}}', scope), '86a8y386n-bank-reconciliation-allow-reverse-re-post-of');
+  assert.equal(renderString('{{name | slug}}', { name: '  Ação rápida — já!  ' }), 'acao-rapida-ja');
+  assert.equal(renderString('{{name | slug}}', { name: 'x'.repeat(60) }), 'x'.repeat(48));
+  assert.equal(renderString('{{missing | slug}}', {}), '');
+  assert.equal(renderString("{{= 'Fix the login page!' | slug }}", {}), 'fix-the-login-page');
+});
