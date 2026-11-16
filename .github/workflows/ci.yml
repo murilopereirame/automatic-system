@@ -62,7 +62,10 @@ jobs:
           load: true
           tags: ${{ env.AUTOWORKER_IMAGE }}
           cache-from: type=gha,scope=image-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=image-${{ matrix.arch }}
+          # The cache only saves time. GitHub refuses to store it for some runs (a run started
+          # again after its pull request was merged, a pull request from a fork), and that must
+          # not fail a build that worked.
+          cache-to: type=gha,mode=max,scope=image-${{ matrix.arch }},ignore-error=true
 
       - name: Start it with the hardened compose file
         run: docker compose up --detach --no-build
