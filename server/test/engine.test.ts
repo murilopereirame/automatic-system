@@ -199,6 +199,46 @@ test('cancelling stops a running command', async () => {
   assert.equal(runs.getRun(run.id)!.status, 'cancelled');
 });
 
+test('skipping stops a stuck command and continues with the next block', async () => {
+  const workflow = workflowWith([
+    { id: 'stuck', type: 'shell', with: { command: 'sleep 30' } },
+    { id: 'after', type: 'shell', with: { command: 'echo "stuck was {{= steps.stuck.skipped ? \'skipped\' : \'run\' }}"' } },
+  ]);
+  const run = engine.startRun(workflow, {});
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  engine.skipStep(run.id);
+  await engine.waitForIdle();
+
+  const done = runs.getRun(run.id)!;
+  assert.equal(done.status, 'succeeded');
+  assert.deepEqual(done.context.steps.stuck, { output: null, skipped: true });
+  assert.match((done.context.steps.after.output as any).output, /stuck was skipped/);
+  assert.deepEqual(skipped(done), ['stuck']);
+});
+
+test('skipping a failed block continues after it, and skipping an approval dismisses it', async () => {
+  const workflow = workflowWith([
+    { id: 'broken', type: 'shell', with: { command: 'exit 1' } },
+    { id: 'gate', type: 'approval', with: { message: 'ok?' } },
+    { id: 'after', type: 'shell', with: { command: 'echo done' } },
+  ]);
+  let run = await runToRest(workflow);
+  assert.equal(run.status, 'failed');
+
+  engine.skipStep(run.id);
+  await engine.waitForIdle();
+  run = runs.getRun(run.id)!;
+  assert.equal(run.status, 'waiting', 'the run went on to the approval');
+
+  engine.skipStep(run.id);
+  await engine.waitForIdle();
+  run = runs.getRun(run.id)!;
+  assert.equal(run.status, 'succeeded');
+  assert.deepEqual(skipped(run), ['broken', 'gate']);
+  assert.deepEqual(runs.listApprovals({ runId: run.id, status: 'pending' }), []);
+  assert.throws(() => engine.skipStep(run.id), /Only a run that is running, waiting, failed or cancelled/);
+});
+
 test('commands see formula variables and exposed secrets, but not the server environment', async () => {
   setSecret('EXPOSED', 'visible');
   setSecret('PRIVATE', 'hidden');

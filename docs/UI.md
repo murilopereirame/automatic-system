@@ -22,7 +22,7 @@ flowchart LR
 | **Workflows** | See all workflows, import a formula file, start a run |
 | **Workflow editor** | Build the workflow. Four tabs, all editing the same formula |
 | **Runs** | History of runs with their state and current block |
-| **Run** | Follow a run live, answer its approvals, open a shell, cancel or retry |
+| **Run** | Follow a run live, answer its approvals, open a shell, cancel, retry or skip a block |
 | **Inbox** | Every approval that is waiting for you, across all runs. The number in the navigation is the count |
 | **Settings** | Secrets and the commit author |
 
@@ -56,6 +56,12 @@ flowchart LR
 - A pending approval appears on top. Approve to continue. Reject with a
   comment to send the run back to an earlier block with your comment as
   feedback for Claude, when the block is configured that way.
+- **Skip "block name"** passes over the block the run is at and continues with
+  the next one. Use it when a block is stuck or not needed this time. It is
+  there while the block runs (what it is doing is stopped), waits for you, or
+  has failed. The block is marked **Skipped** and has no output.
+- **Retry from failed block** runs the failed block again. A condition block
+  that had gone back too often gets its full number of repeats again.
 - **Open shell** starts a terminal in the run's workspace, as the same user
   and with the same environment as Claude. Use it to inspect the work or run
   git commands while the run waits for you.

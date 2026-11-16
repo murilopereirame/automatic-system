@@ -85,8 +85,10 @@ stateDiagram-v2
     running --> succeeded: last block done
     running --> failed: a block throws
     running --> cancelled: user cancels
-    failed --> running: retry
-    cancelled --> running: retry
+    failed --> running: retry or skip
+    cancelled --> running: retry or skip
+    waiting --> running: skip
+    running --> running: skip (stops the block, next one starts)
     succeeded --> [*]
 ```
 
@@ -128,6 +130,24 @@ failed because it had gone back too often can go back again.
 
 A run keeps a copy of the workflow definition it started with, so editing a
 workflow never changes runs that are in flight.
+
+### Skipping a block by hand
+
+**Skip** on the run page passes over the block the run is at, for a block
+that is stuck or that the run can do without. It works while the block is
+running (its command or Claude session is stopped first), while it waits for
+an approval (the approval is dismissed), and after it failed or the run was
+cancelled. The block is recorded exactly like one skipped by a condition:
+`output: null` and `skipped: true`, so a later block can ask
+`steps.<id>.skipped`. Then the run continues with the next block.
+
+```mermaid
+flowchart LR
+    S([Skip pressed]) --> R{block is running?}
+    R -- yes --> K[stop its command or Claude] --> M
+    R -- "no: waiting, failed or cancelled" --> D[dismiss a pending approval] --> M
+    M[mark the block as skipped] --> N[stepIndex + 1] --> C([run continues])
+```
 
 If the server restarts, runs that were executing are marked as failed with a
 note, and can be retried from the block they were in. Runs waiting for

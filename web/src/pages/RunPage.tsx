@@ -67,6 +67,13 @@ export function RunPage({ runId }: { runId: string }) {
   const pending = approvals.filter((approval) => approval.status === 'pending');
   const shownEvents = selectedStep ? events.filter((event) => event.stepId === selectedStep) : events;
   const active = run.status === 'running' || run.status === 'queued' || run.status === 'waiting';
+  const currentStep: StepConfig | undefined = run.definition.steps[run.stepIndex];
+  const canSkip = currentStep && ['running', 'waiting', 'failed', 'cancelled'].includes(run.status);
+  const skip = () => {
+    const name = currentStep?.name || currentStep?.id;
+    const stops = run.status === 'running' ? ' What it is doing right now is stopped.' : '';
+    if (window.confirm(`Skip "${name}" and continue with the next block?${stops} Later blocks will see it as skipped, without an output.`)) act(api.skipStep(run.id));
+  };
   const stepOf = (stepId: string): StepConfig | undefined => run.definition.steps.find((step) => step.id === stepId);
 
   return (
@@ -82,6 +89,11 @@ export function RunPage({ runId }: { runId: string }) {
         {active && (
           <button className="danger" onClick={() => act(api.cancelRun(run.id))}>
             Cancel run
+          </button>
+        )}
+        {canSkip && (
+          <button onClick={skip} title="Pass over this block and continue with the next one">
+            Skip "{currentStep.name || currentStep.id}"
           </button>
         )}
         {(run.status === 'failed' || run.status === 'cancelled') && (
