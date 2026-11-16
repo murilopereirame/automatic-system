@@ -1,6 +1,6 @@
 /** JSON API used by the web UI. Every route here requires authentication. */
 import type { FastifyInstance } from 'fastify';
-import { cancelRun, resolveApproval, retryRun, startRun } from '../engine/engine.js';
+import { cancelRun, resolveApproval, retryRun, skipStep, startRun } from '../engine/engine.js';
 import { HttpError } from '../errors.js';
 import { applyInputs } from '../inputs.js';
 import { parseDefinition, parseFormula, toFormula } from '../formula.js';
@@ -141,6 +141,15 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
   app.post<IdParams>('/runs/:id/retry', async (request) => {
     try {
       retryRun(request.params.id);
+    } catch (error) {
+      throw new HttpError(409, (error as Error).message);
+    }
+    return { ok: true };
+  });
+
+  app.post<IdParams>('/runs/:id/skip', async (request) => {
+    try {
+      skipStep(request.params.id);
     } catch (error) {
       throw new HttpError(409, (error as Error).message);
     }

@@ -30,8 +30,15 @@ import { text, type StepRuntime } from '../steps/types.js';
 import { renderDeep } from '../template.js';
 import { MANUAL_TRIGGER, type Run, type SCOPE_NAMES, type StepConfig, type TriggerRef, type Workflow } from '../types.js';
 
-/** Abort handles of the runs that are executing right now, by run id. */
-const activeRuns = new Map<string, AbortController>();
+/** A run that is executing right now: how to stop its current step, and whether that stop is a "skip this block". */
+interface ActiveRun {
+  controller: AbortController;
+  skipRequested: boolean;
+}
+
+const activeRuns = new Map<string, ActiveRun>();
+
+const SKIPPED_BY_HAND = 'skipped by hand';
 
 /** Creates a run for a workflow and starts executing it in the background. */
 export function startRun(workflow: Workflow, payload: Record<string, unknown>, triggeredBy: TriggerRef = MANUAL_TRIGGER): Run {
@@ -47,7 +54,8 @@ export async function executeRun(runId: string): Promise<void> {
   if (!run || activeRuns.has(runId)) return;
 
   const controller = new AbortController();
-  activeRuns.set(runId, controller);
+  const active: ActiveRun = { controller, skipRequested: false };
+  activeRuns.set(runId, active);
   run.status = 'running';
   run.error = undefined;
   runs.saveRun(run);
@@ -66,7 +74,9 @@ export async function executeRun(runId: string): Promise<void> {
     }
     finish(run, 'succeeded');
   } catch (error) {
-    if (controller.signal.aborted) {
+    if (active.skipRequested) {
+      skipCurrentStep(run);
+    } else if (controller.signal.aborted) {
       finish(run, 'cancelled', 'Cancelled');
     } else {
       finish(run, 'failed', errorMessage(error));
@@ -75,6 +85,8 @@ export async function executeRun(runId: string): Promise<void> {
   } finally {
     activeRuns.delete(runId);
   }
+  // The step that was running has been stopped and passed over: carry on with the next one.
+  if (active.skipRequested) await executeRun(runId);
 }
 
 /** Executes one step. Returns the index of the step to continue with, or 'paused' when the run is now waiting for a human. */
@@ -222,8 +234,8 @@ export function resolveApproval(approvalId: string, decision: 'approved' | 'reje
 }
 
 export function cancelRun(runId: string): void {
-  const controller = activeRuns.get(runId);
-  if (controller) return controller.abort();
+  const active = activeRuns.get(runId);
+  if (active) return active.controller.abort();
 
   const run = runs.getRun(runId);
   if (!run || !['queued', 'waiting'].includes(run.status)) return;
@@ -231,13 +243,55 @@ export function cancelRun(runId: string): void {
   finish(run, 'cancelled', 'Cancelled');
 }
 
-/** Continues a failed or cancelled run from the step it stopped at. */
+/**
+ * Continues a failed or cancelled run from the step it stopped at.
+ *
+ * A retry is a person saying "try again", so the going-back counters of the
+ * condition blocks start from zero. Without that, a run that failed because a
+ * condition used up its `maxRepeats` would fail again right away: the
+ * condition is still false and it would have no repeats left.
+ */
 export function retryRun(runId: string): void {
   const run = runs.getRun(runId);
   if (!run || !['failed', 'cancelled'].includes(run.status)) throw new Error('Only failed or cancelled runs can be retried');
   runs.dismissPendingApprovals(runId);
+  run.context.repeats = {};
+  runs.saveRun(run);
   runs.addEvent(run.id, null, 'retried', { fromStep: run.definition.steps[run.stepIndex]?.id });
   void executeRun(runId);
+}
+
+/**
+ * Passes over the step a run is at and continues with the next one. For a
+ * step that is stuck, or that a person decides the run can do without.
+ *  - running: the step's command or Claude session is stopped first
+ *  - waiting: the approval is dismissed
+ *  - failed or cancelled: like a retry, but starting after the step
+ * The step is recorded like one skipped by a condition (`output: null`,
+ * `skipped: true`), so later blocks can check `steps.<id>.skipped`.
+ */
+export function skipStep(runId: string): void {
+  const run = runs.getRun(runId);
+  if (!run || !['running', 'waiting', 'failed', 'cancelled'].includes(run.status)) throw new Error('Only a run that is running, waiting, failed or cancelled can skip a block');
+  if (!run.definition.steps[run.stepIndex]) throw new Error('This run has no block left to skip');
+
+  const active = activeRuns.get(runId);
+  if (active) {
+    // executeRun notices the flag when the stopped step throws, and continues from there.
+    active.skipRequested = true;
+    return active.controller.abort();
+  }
+  runs.dismissPendingApprovals(runId);
+  run.context.repeats = {};
+  skipCurrentStep(run);
+  void executeRun(runId);
+}
+
+/** Marks the step at `run.stepIndex` as skipped by a person and moves the run to the next step. */
+function skipCurrentStep(run: Run): void {
+  skip(run, run.definition.steps[run.stepIndex], SKIPPED_BY_HAND);
+  run.stepIndex += 1;
+  runs.saveRun(run);
 }
 
 /** Called once at startup: runs that were executing when the server stopped cannot continue on their own. */

@@ -98,7 +98,7 @@ All routes under `/api` need the session cookie or `Authorization: Bearer <token
 | `GET /api/workflows/:id/formula` | Export as formula |
 | `POST /api/formulas/import` | Import a formula (YAML body) |
 | `GET /api/runs`, `GET /api/runs/:id` | Runs, with events and approvals |
-| `POST /api/runs/:id/cancel`, `POST /api/runs/:id/retry` | Control a run |
+| `POST /api/runs/:id/cancel`, `POST /api/runs/:id/retry`, `POST /api/runs/:id/skip` | Control a run: stop it, continue from the block it stopped at, or pass over that block |
 | `GET /api/stream` | Server-sent events with live run updates |
 | `GET /api/approvals?status=pending`, `POST /api/approvals/:id/resolve` | Inbox |
 | `GET /api/secrets`, `PUT/DELETE /api/secrets/:name` | Secrets (names only on read) |

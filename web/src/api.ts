@@ -98,6 +98,7 @@ export const api = {
   run: (id: string) => request<RunDetail>('GET', `/runs/${id}`),
   cancelRun: (id: string) => request('POST', `/runs/${id}/cancel`, {}),
   retryRun: (id: string) => request('POST', `/runs/${id}/retry`, {}),
+  skipStep: (id: string) => request('POST', `/runs/${id}/skip`, {}),
 
   pendingApprovals: () => request<PendingApproval[]>('GET', '/approvals?status=pending'),
   resolveApproval: (id: string, decision: 'approved' | 'rejected', comment: string) =>

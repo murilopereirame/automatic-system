@@ -165,6 +165,25 @@ test('a condition can send the run back, but only a limited number of times', as
   assert.equal(readFileSync(path.join(never.workspace, 'tries.txt'), 'utf8'), 'x\nx\nx\n');
 });
 
+test('retrying a run that used up its repeats gives the condition a fresh set of repeats', async () => {
+  const lines = (run: { workspace: string }) => readFileSync(path.join(run.workspace, 'tries.txt'), 'utf8').trim().split('\n').length;
+  const workflow = workflowWith([
+    { id: 'try', type: 'shell', with: { command: 'echo x >> tries.txt; test $(wc -l < tries.txt) -ge 5', continueOnError: true } },
+    { id: 'again', type: 'condition', with: { expression: 'previous.output.passed', else: 'try', maxRepeats: 2 } },
+  ]);
+  const failed = await runToRest(workflow);
+  assert.equal(failed.status, 'failed');
+  assert.match(failed.error!, /already went back 2 times/);
+  assert.equal(lines(failed), 3);
+
+  engine.retryRun(failed.id);
+  await engine.waitForIdle();
+  const retried = runs.getRun(failed.id)!;
+  assert.equal(retried.status, 'succeeded', 'the retry goes back to "try" again instead of failing right away');
+  assert.equal(lines(retried), 5);
+  assert.deepEqual(retried.context.repeats, { again: 2 }, 'only the repeats since the retry are counted');
+});
+
 test('a condition that cannot be evaluated fails the run at that block', async () => {
   const run = await runToRest(workflowWith([{ id: 'broken', type: 'shell', if: "'abc' * 2", with: { command: 'echo no' } }]));
   assert.equal(run.status, 'failed');
@@ -178,6 +197,46 @@ test('cancelling stops a running command', async () => {
   engine.cancelRun(run.id);
   await engine.waitForIdle();
   assert.equal(runs.getRun(run.id)!.status, 'cancelled');
+});
+
+test('skipping stops a stuck command and continues with the next block', async () => {
+  const workflow = workflowWith([
+    { id: 'stuck', type: 'shell', with: { command: 'sleep 30' } },
+    { id: 'after', type: 'shell', with: { command: 'echo "stuck was {{= steps.stuck.skipped ? \'skipped\' : \'run\' }}"' } },
+  ]);
+  const run = engine.startRun(workflow, {});
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  engine.skipStep(run.id);
+  await engine.waitForIdle();
+
+  const done = runs.getRun(run.id)!;
+  assert.equal(done.status, 'succeeded');
+  assert.deepEqual(done.context.steps.stuck, { output: null, skipped: true });
+  assert.match((done.context.steps.after.output as any).output, /stuck was skipped/);
+  assert.deepEqual(skipped(done), ['stuck']);
+});
+
+test('skipping a failed block continues after it, and skipping an approval dismisses it', async () => {
+  const workflow = workflowWith([
+    { id: 'broken', type: 'shell', with: { command: 'exit 1' } },
+    { id: 'gate', type: 'approval', with: { message: 'ok?' } },
+    { id: 'after', type: 'shell', with: { command: 'echo done' } },
+  ]);
+  let run = await runToRest(workflow);
+  assert.equal(run.status, 'failed');
+
+  engine.skipStep(run.id);
+  await engine.waitForIdle();
+  run = runs.getRun(run.id)!;
+  assert.equal(run.status, 'waiting', 'the run went on to the approval');
+
+  engine.skipStep(run.id);
+  await engine.waitForIdle();
+  run = runs.getRun(run.id)!;
+  assert.equal(run.status, 'succeeded');
+  assert.deepEqual(skipped(run), ['broken', 'gate']);
+  assert.deepEqual(runs.listApprovals({ runId: run.id, status: 'pending' }), []);
+  assert.throws(() => engine.skipStep(run.id), /Only a run that is running, waiting, failed or cancelled/);
 });
 
 test('commands see formula variables and exposed secrets, but not the server environment', async () => {
