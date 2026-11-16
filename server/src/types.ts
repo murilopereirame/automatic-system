@@ -139,7 +139,15 @@ export interface Workflow {
 export type RunStatus = 'queued' | 'running' | 'waiting' | 'succeeded' | 'failed' | 'cancelled';
 
 /** Top-level names the templates and expressions of a block can use. The engine provides them (see `scopeFor` in engine/engine.ts). */
-export const SCOPE_NAMES = ['trigger', 'triggeredBy', 'steps', 'previous', 'run', 'repo'] as const;
+export const SCOPE_NAMES = ['trigger', 'triggeredBy', 'steps', 'previous', 'run', 'repo', 'repos'] as const;
+
+export interface RepoContext {
+  url: string;
+  owner: string;
+  name: string;
+  baseBranch: string;
+  branch: string;
+}
 
 /** Mutable state carried from step to step. Templates read from it. */
 export interface RunContext {
@@ -151,10 +159,15 @@ export interface RunContext {
   steps: Record<string, { output: unknown; skipped?: boolean }>;
   /** How often each condition block has sent the run back to an earlier block. */
   repeats?: Record<string, number>;
-  /** Directory later steps run in. Set by the "Clone repository" step. */
+  /** Directory later steps run in. Set by the first "Clone repository" step. */
   workdir?: string;
-  repo?: { url: string; owner: string; name: string; baseBranch: string; branch: string };
+  /** The repository later steps work on by default: the first one cloned. */
+  repo?: RepoContext;
+  /** Every repository cloned in this run, by the folder it was cloned into (`repo` unless the block says otherwise). */
+  repos?: Record<string, RepoContext & { dir: string }>;
   claudeSessionId?: string;
+  /** Folder the Claude conversation belongs to. Claude Code can only resume a conversation from the folder it started in. */
+  claudeSessionDir?: string;
   /** Reviewer comment from a rejected approval, consumed by the next Claude step. */
   feedback?: string;
 }

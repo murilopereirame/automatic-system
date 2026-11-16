@@ -21,6 +21,31 @@ test('the example formula is valid and survives an export/import round trip', ()
   assert.deepEqual(parseFormula(exported), input);
 });
 
+test('the full-stack example is valid, and every template expression in it parses', async () => {
+  const { checkExpression } = await import('../src/expression.js');
+  const { renderDeep } = await import('../src/template.js');
+  const { SCOPE_NAMES } = await import('../src/types.js');
+  const source = readFileSync(path.join(import.meta.dirname, '../../examples/task-to-pull-requests.formula.yaml'), 'utf8');
+  const { definition } = parseFormula(source);
+
+  const clones = definition.steps.filter((step) => step.type === 'git_clone').map((step) => step.with.path);
+  assert.deepEqual(clones, ['backend', 'frontend']);
+  const pullRequests = definition.steps.filter((step) => step.type === 'github_pr').map((step) => step.with.repo);
+  assert.deepEqual(pullRequests, ['backend', 'frontend', 'backend', 'frontend']);
+
+  for (const step of definition.steps) {
+    for (const value of Object.values(step.with)) {
+      if (typeof value !== 'string') continue;
+      for (const [, source] of value.matchAll(/\{\{=(.+?)\}\}/gs)) {
+        const expression = source.replace(/(?<!\|)\|(?!\|)\s*\w+\s*$/, '');
+        assert.doesNotThrow(() => checkExpression(expression, SCOPE_NAMES), `step ${step.id}: ${expression}`);
+      }
+    }
+    // Renders against an empty run without unknown filters or errors.
+    assert.doesNotThrow(() => renderDeep(step.with, { trigger: {}, steps: {}, run: { id: 'r1' } }), `step ${step.id}`);
+  }
+});
+
 test('rejects documents that are not formulas', () => {
   assert.throws(() => parseFormula('kind: Deployment'), /Not a formula/);
   assert.throws(() => parseFormula('{ not yaml'), /not valid YAML/);

@@ -117,6 +117,7 @@ function scopeFor(run: Run): Record<(typeof SCOPE_NAMES)[number], unknown> {
     previous: (above && context.steps[above.id]) ?? { output: null },
     run: { id: run.id },
     repo: context.repo,
+    repos: context.repos,
   };
 }
 

@@ -3,7 +3,7 @@ import { mockApi, tempDir, waitFor } from './helpers.js';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHmac } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { after, test } from 'node:test';
 import { emptyEnvironment } from '../src/types.js';
@@ -31,9 +31,29 @@ const clickup = await mockApi(({ method, url }) => {
   if (method === 'POST' && url === '/task/t2/comment') return {};
   return undefined;
 });
+// Pull requests opened against the stand-in GitHub, so a second push finds the first one.
+const openPullRequests: { repo: string; number: number; head: string; draft: boolean; node_id: string; html_url: string }[] = [];
 const github = await mockApi(({ method, url, body }) => {
   if (url === '/user') return { id: 42, login: 'octo', name: 'Octo Cat', email: null };
   if (method === 'POST' && url === '/repos/acme/app/pulls') return { number: 5, html_url: `https://github.com/acme/app/pull/5`, title: body.title };
+  const list = url.match(/^\/repos\/acme\/(\w+)\/pulls\?(.*)$/);
+  if (method === 'GET' && list) {
+    const head = new URLSearchParams(list[2]).get('head');
+    return openPullRequests.filter((pr) => pr.repo === list[1] && `acme:${pr.head}` === head);
+  }
+  const create = url.match(/^\/repos\/acme\/(api|web)\/pulls$/);
+  if (method === 'POST' && create) {
+    const number = 10 + openPullRequests.length;
+    const pr = { repo: create[1], number, head: body.head, draft: body.draft, node_id: `PR_${create[1]}`, html_url: `https://github.com/acme/${create[1]}/pull/${number}` };
+    openPullRequests.push(pr);
+    return pr;
+  }
+  if (method === 'PATCH' && /^\/repos\/acme\/\w+\/pulls\/\d+$/.test(url)) return { ok: true };
+  if (method === 'POST' && url === '/graphql') {
+    const pr = openPullRequests.find((candidate) => candidate.node_id === body.variables.id);
+    if (pr) pr.draft = false;
+    return { data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } } };
+  }
   return undefined;
 });
 process.env.CLICKUP_API_URL = clickup.url;
@@ -161,7 +181,7 @@ test('clone, change, push and open a pull request as the token owner', async () 
   const finished = runs.getRun(run.id)!;
   assert.equal(finished.error, undefined);
   assert.equal(finished.status, 'succeeded');
-  assert.deepEqual(finished.context.steps.pull_request.output, { url: 'https://github.com/acme/app/pull/5', number: 5, branch: 'autoworker/t2' });
+  assert.deepEqual(finished.context.steps.pull_request.output, { url: 'https://github.com/acme/app/pull/5', number: 5, branch: 'autoworker/t2', updated: false });
 
   // The pushed commit is authored by the owner of the GitHub token.
   assert.equal(git(bare, 'log', '-1', '--format=%an <%ae> %s', 'autoworker/t2').trim(), 'Octo Cat <42+octo@users.noreply.github.com> Add dark mode');
@@ -175,4 +195,138 @@ test('clone, change, push and open a pull request as the token owner', async () 
   // The token must not stay behind in the workspace.
   const leftovers = spawnSync('grep', ['-rl', 'ghp_test', finished.workspace], { encoding: 'utf8' }).stdout.trim();
   assert.equal(leftovers, '');
+});
+
+/** A local bare repository standing in for github.com/acme/<name>, with one commit on main. */
+function bareRepository(name: string): string {
+  const remotes = path.join(tempDir, 'remotes');
+  const bare = path.join(remotes, `acme/${name}.git`);
+  const seed = path.join(tempDir, `seed-${name}`);
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' });
+  mkdirSync(path.dirname(bare), { recursive: true });
+  git(tempDir, 'init', '--quiet', '--bare', '--initial-branch=main', bare);
+  git(tempDir, 'init', '--quiet', '--initial-branch=main', seed);
+  writeFileSync(path.join(seed, 'README.md'), `${name}\n`);
+  git(seed, 'add', '.');
+  git(seed, '-c', 'user.name=Seed', '-c', 'user.email=seed@example.com', 'commit', '--quiet', '-m', 'init');
+  git(seed, 'push', '--quiet', bare, 'main');
+  return bare;
+}
+
+test('one run works on two repositories and pushes each to its own pull request', async () => {
+  const api = bareRepository('api');
+  const web = bareRepository('web');
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' });
+  const gitConfig = path.join(tempDir, 'gitconfig-two');
+  writeFileSync(gitConfig, `[url "file://${path.join(tempDir, 'remotes')}/"]\n\tinsteadOf = https://github.com/\n`);
+  const commit = (file: string) => `echo change > ${file} && git add . && git -c user.name=Bot -c user.email=bot@example.com commit --quiet -m ${file}`;
+
+  const workflow = createWorkflow({
+    name: 'full-stack',
+    definition: {
+      triggers: [],
+      environment: { ...emptyEnvironment(), env: { GIT_CONFIG_GLOBAL: gitConfig } },
+      notifications: [],
+      steps: [
+        { id: 'clone_api', type: 'git_clone', with: { repo: 'acme/api', path: 'backend', branch: '{{trigger.task.id}}-{{trigger.task.name | slug}}' } },
+        { id: 'clone_web', type: 'git_clone', with: { repo: 'acme/web', path: 'frontend', branch: '{{repos.backend.branch}}' } },
+        { id: 'plan', type: 'claude', with: { prompt: 'Plan {{trigger.task.name}}', cwd: '.' } },
+        { id: 'build', type: 'claude', with: { prompt: 'Build it in {{repos.backend.name}} and {{repos.frontend.name}}', cwd: '.' } },
+        { id: 'api_change', type: 'shell', with: { command: commit('api.txt'), cwd: 'backend' } },
+        { id: 'web_change', type: 'shell', with: { command: commit('web.txt'), cwd: 'frontend' } },
+        { id: 'where', type: 'shell', with: { command: 'pwd' } },
+        { id: 'draft_api', type: 'github_pr', with: { repo: 'backend', title: 'feat: api', body: 'draft', draft: true } },
+        { id: 'api_fix', type: 'shell', with: { command: commit('fix.txt'), cwd: 'backend' } },
+        { id: 'ready_api', type: 'github_pr', with: { repo: 'backend', title: 'feat: api', body: 'final' } },
+        { id: 'pr_web', type: 'github_pr', with: { repo: 'frontend', title: 'feat: web', body: 'Backend: {{steps.ready_api.output.url}}' } },
+      ],
+    },
+  });
+
+  const run = engine.startRun(workflow, { task: { id: 'abc123', name: 'Show the balance on invoices!' } });
+  await engine.waitForIdle();
+  const finished = runs.getRun(run.id)!;
+  assert.equal(finished.error, undefined);
+  assert.equal(finished.status, 'succeeded');
+
+  // Both clones are known by folder; the first one stays the default working directory.
+  const branch = 'abc123-show-the-balance-on-invoices';
+  assert.equal(finished.context.repos?.backend.branch, branch);
+  assert.equal(finished.context.repos?.frontend.branch, branch);
+  assert.equal(finished.context.repo?.name, 'api');
+  assert.equal(realpathSync((finished.context.steps.where.output as any).output.trim()), realpathSync(path.join(finished.workspace, 'backend')));
+
+  // Claude ran in the workspace itself, and the second block continued the first conversation.
+  assert.match(readFileSync(path.join(finished.workspace, 'claude-output.txt'), 'utf8'), /Build it in api and web/);
+  assert.equal((finished.context.steps.build.output as any).result, 'Done (resumed)');
+
+  // The second push to the same branch updated the draft and made it ready instead of failing.
+  assert.equal((finished.context.steps.draft_api.output as any).updated, false);
+  assert.deepEqual(finished.context.steps.ready_api.output, { url: 'https://github.com/acme/api/pull/10', number: 10, branch, updated: true });
+  assert.equal(openPullRequests.find((pr) => pr.repo === 'api')!.draft, false);
+  assert.equal(git(api, 'log', '-1', '--format=%s', branch).trim(), 'fix.txt');
+  const patch = github.requests.find((request) => request.method === 'PATCH' && request.url === '/repos/acme/api/pulls/10')!;
+  assert.deepEqual(patch.body, { title: 'feat: api', body: 'final' });
+
+  // The frontend went to its own repository and pull request, linking the backend one.
+  assert.equal(git(web, 'log', '-1', '--format=%s', branch).trim(), 'web.txt');
+  const webPr = github.requests.find((request) => request.method === 'POST' && request.url === '/repos/acme/web/pulls')!;
+  assert.equal(webPr.body.body, 'Backend: https://github.com/acme/api/pull/10');
+  assert.equal(webPr.body.head, branch);
+});
+
+test('a block cannot be pointed outside the run workspace', async () => {
+  const workflow = createWorkflow({
+    name: 'escape',
+    definition: { ...noSteps, triggers: [], steps: [{ id: 'escape', type: 'shell', with: { command: 'pwd', cwd: '../..' } }] },
+  });
+  const run = engine.startRun(workflow, {});
+  await engine.waitForIdle();
+  const finished = runs.getRun(run.id)!;
+  assert.equal(finished.status, 'failed');
+  assert.match(finished.error ?? '', /outside the run workspace/);
+});
+
+test('a second clone into the same folder is refused with a clear message', async () => {
+  bareRepository('dup');
+  const gitConfig = path.join(tempDir, 'gitconfig-dup');
+  writeFileSync(gitConfig, `[url "file://${path.join(tempDir, 'remotes')}/"]\n\tinsteadOf = https://github.com/\n`);
+  const workflow = createWorkflow({
+    name: 'dup',
+    definition: {
+      ...noSteps,
+      triggers: [],
+      environment: { ...emptyEnvironment(), env: { GIT_CONFIG_GLOBAL: gitConfig } },
+      steps: [
+        { id: 'one', type: 'git_clone', with: { repo: 'acme/dup' } },
+        { id: 'two', type: 'git_clone', with: { repo: 'acme/dup' } },
+      ],
+    },
+  });
+  const run = engine.startRun(workflow, {});
+  await engine.waitForIdle();
+  assert.match(runs.getRun(run.id)!.error ?? '', /folder "repo" already exists/);
+});
+
+test('a Claude block in another folder starts a new conversation instead of failing to resume', async () => {
+  const workflow = createWorkflow({
+    name: 'two-folders',
+    definition: {
+      ...noSteps,
+      triggers: [],
+      steps: [
+        { id: 'mkdir', type: 'shell', with: { command: 'mkdir sub' } },
+        { id: 'first', type: 'claude', with: { prompt: 'one', cwd: '.' } },
+        { id: 'second', type: 'claude', with: { prompt: 'two', cwd: 'sub' } },
+        { id: 'third', type: 'claude', with: { prompt: 'three', cwd: 'sub' } },
+      ],
+    },
+  });
+  const run = engine.startRun(workflow, {});
+  await engine.waitForIdle();
+  const finished = runs.getRun(run.id)!;
+  assert.equal(finished.status, 'succeeded');
+  assert.equal((finished.context.steps.second.output as any).result, 'Done');
+  assert.equal((finished.context.steps.third.output as any).result, 'Done (resumed)');
+  assert.ok(runs.listEvents(run.id).some((event) => event.stepId === 'second' && event.type === 'claude_new_session'));
 });

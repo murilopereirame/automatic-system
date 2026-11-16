@@ -14,7 +14,10 @@ flowchart LR
 
 Importing a formula whose name already exists updates that workflow.
 
-A complete example: [`examples/clickup-to-pr.formula.yaml`](../examples/clickup-to-pr.formula.yaml).
+Complete examples:
+
+- [`examples/clickup-to-pr.formula.yaml`](../examples/clickup-to-pr.formula.yaml): one repository, from a ClickUp task to a pull request.
+- [`examples/task-to-pull-requests.formula.yaml`](../examples/task-to-pull-requests.formula.yaml): features and bug fixes across a backend and a frontend repository. See [Several repositories](#several-repositories).
 
 ## Structure
 
@@ -67,7 +70,8 @@ Text settings may contain `{{ path }}` placeholders.
 | `{{triggeredBy.id}}`, `{{triggeredBy.type}}` | Which trigger started the run. Both are `manual` for **Run now** |
 | `{{steps.<id>.output...}}` | Output of an earlier block, e.g. `{{steps.implement.output.result}}` |
 | `{{run.id}}` | Id of the run |
-| `{{repo.branch}}`, `{{repo.baseBranch}}`, `{{repo.owner}}`, `{{repo.name}}` | Set by the clone block |
+| `{{repo.branch}}`, `{{repo.baseBranch}}`, `{{repo.owner}}`, `{{repo.name}}` | Set by the first clone block |
+| `{{repos.<folder>.branch}}`, `.baseBranch`, `.owner`, `.name`, `.dir` | Every clone, by the folder it was cloned into, e.g. `{{repos.frontend.branch}}` |
 
 Unknown placeholders render as empty text.
 
@@ -75,6 +79,7 @@ Filters prepare a value for where it is used:
 
 - `{{ message | json }}` renders a JSON literal, with quotes and escaping. Use it inside JSON bodies.
 - `{{ message | url }}` percent-encodes the value. Use it inside URLs.
+- `{{ task.name | slug }}` makes the value safe for a branch name: lowercase letters, digits and hyphens, at most 48 characters. `Fix the login page!` becomes `fix-the-login-page`.
 
 A placeholder that starts with `=` holds an expression instead of a path:
 `{{= steps.tests.output.passed ? 'passed' : 'failed' }}`. The language is
@@ -255,13 +260,47 @@ expression: when it is false the run skips the block. See
 |------|--------------|--------|
 | `notify` | Calls the notification webhooks. `message`, optional `channel` (webhook name) | `delivered` |
 | `clickup_fetch_task` | Loads a ClickUp task. `taskId`, `includeComments`, `includeSubtasks`, `downloadAttachments` (saved to `task-attachments/` in the run workspace, next to the repository) | `id`, `name`, `description`, `url`, `status`, `comments`, `subtasks`, `attachments`, `attachmentFiles` |
-| `git_clone` | Clones a GitHub repository and creates the working branch. `repo` (`owner/name`), `baseBranch`, `branch`, `tokenSecret` | `owner`, `name`, `baseBranch`, `branch` |
-| `claude` | Runs Claude Code with a `prompt`. Optional `model`, `permissionMode`, `allowedTools`, `maxTurns`, `continueSession` | `result`, `sessionId`, `costUsd`, `turns` |
-| `shell` | Runs a `command` as the agent user, e.g. tests. `continueOnError` | `exitCode`, `passed`, `output` |
+| `git_clone` | Clones a GitHub repository and creates the working branch. `repo` (`owner/name`), `baseBranch`, `branch`, `path` (folder in the workspace, default `repo`), `tokenSecret` | `owner`, `name`, `baseBranch`, `branch`, `path` |
+| `claude` | Runs Claude Code with a `prompt`. Optional `model`, `permissionMode`, `allowedTools`, `maxTurns`, `continueSession`, `cwd` | `result`, `sessionId`, `costUsd`, `turns` |
+| `shell` | Runs a `command` as the agent user, e.g. tests. `continueOnError`, `cwd` | `exitCode`, `passed`, `output` |
 | `approval` | Pauses until you approve or reject. `message`, optional `onReject` (id of an earlier block) | `decision`, `comment` |
 | `condition` | An if/else. `expression`, optional `then` and `else` (a block id, or `$end` to finish the run), `maxRepeats`. See [EXPRESSIONS.md](EXPRESSIONS.md) | `result`, `branch`, `goTo` |
-| `github_pr` | Commits what is left, pushes the branch and opens a pull request as the owner of the token. `title`, `body`, `base`, `draft`, `tokenSecret` | `url`, `number`, `branch` |
+| `github_pr` | Commits what is left, pushes the branch and opens a pull request as the owner of the token. Run again on the same branch, it pushes the new commits and updates that pull request (title, body, and from draft to ready when `draft` is off). `title`, `body`, `base`, `draft`, `repo` (clone folder), `tokenSecret` | `url`, `number`, `branch`, `updated` |
 | `clickup_comment` | Comments on a ClickUp task. `taskId`, `comment` | `comment` |
+
+`cwd` is a folder relative to the run workspace, such as `frontend` or `.` for
+the workspace itself. Without it, blocks run in the first cloned repository.
+A `cwd` that leaves the workspace fails the block.
+
+### Several repositories
+
+A run can clone more than one repository, each into its own folder, and open a
+pull request in each:
+
+```yaml
+steps:
+  - { id: clone_backend, type: git_clone, with: { repo: acme/api, path: backend, branch: "{{trigger.task.id}}-{{trigger.task.name | slug}}" } }
+  - { id: clone_frontend, type: git_clone, with: { repo: acme/web, path: frontend, branch: "{{repos.backend.branch}}" } }
+  - { id: build, type: claude, with: { cwd: ".", prompt: "Change the API in backend/ and the screen in frontend/." } }
+  - { id: api_tests, type: shell, with: { cwd: backend, command: npm test } }
+  - { id: pr_api, type: github_pr, with: { repo: backend, title: "feat: ..." } }
+  - { id: pr_web, type: github_pr, with: { repo: frontend, title: "feat: ...", body: "Backend: {{steps.pr_api.output.url}}" } }
+```
+
+```mermaid
+flowchart LR
+    W[(run workspace)] --> B[backend/<br/>acme/api]
+    W --> F[frontend/<br/>acme/web]
+    W --> H[handoff/, task-attachments/<br/>never committed]
+    C[claude<br/>cwd: .] -.-> W
+    S1[shell<br/>cwd: backend] -.-> B
+    P1[github_pr<br/>repo: backend] -.-> B
+    P2[github_pr<br/>repo: frontend] -.-> F
+```
+
+- The first clone is the default folder for blocks without `cwd`, for `{{repo...}}` and for the web shell.
+- Claude Code keeps one conversation per folder. To keep a single conversation across both repositories, run the Claude blocks with `cwd: "."` and say in the prompt which folder to work in. A Claude block in a different folder than the conversation starts a new one (the run log says so).
+- Because `github_pr` can run twice on a branch, a workflow can push a draft early, for example so the branch can be deployed to staging, and make it ready after a final approval.
 
 ### Approval and rework
 

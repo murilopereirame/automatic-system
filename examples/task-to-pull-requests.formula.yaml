@@ -1,0 +1,491 @@
+# Example formula: one trigger, a whole change. Features, bug fixes and chores,
+# across a backend and a frontend repository, from the task to the pull requests.
+#
+#   trigger ─► fetch task ─► clone both repos ─► plan (read only) ─► YOU: approve plan
+#     ─► [bug: reproduce with a failing test] ─► backend ─► API handoff ─► frontend
+#     ─► self review ─► checks + fix loops ─► YOU: review the diff ─► draft PRs
+#     ─► YOU: deploy to staging ─► verify on staging (loops back on failure)
+#     ─► PR texts ─► YOU: final approval ─► PRs ready ─► link on the task ─► notify
+#
+# Only the repositories the plan needs are touched, and a pull request is opened
+# only for a repository that actually has commits.
+#
+# Start it with any of:
+#   - a ClickUp task assigned to you (the clickup trigger),
+#   - POST /hooks/<workflow id>/webhook?secret=<hook secret> with either
+#       {"task": {"id": "<clickup task id>"}}                     (a ClickUp task), or
+#       {"title": "Fix the login page", "request": "What is wrong and what to do",
+#        "kind": "bug"}                                            (no ClickUp at all),
+#   - "Run now" in the UI with one of those payloads.
+#
+# Replace your-org/backend and your-org/frontend, the commands in the "install",
+# "backend_checks" and "frontend_checks" blocks, and the staging hosts. Secrets to
+# add under Settings > Secrets:
+#   CLICKUP_TOKEN, GITHUB_TOKEN, CLAUDE_CODE_OAUTH_TOKEN (or ANTHROPIC_API_KEY), NTFY_TOPIC
+apiVersion: autoworker/v1
+kind: Formula
+metadata:
+  name: Task to pull requests (backend and frontend)
+  description: Plans, implements, checks, verifies on staging and opens pull requests in the backend and frontend repositories, with your approval at each gate.
+  enabled: false
+
+triggers:
+  - id: clickup
+    type: clickup
+    with:
+      mode: poll
+      pollSeconds: 60
+  - id: webhook
+    type: webhook
+
+environment:
+  runtimes:
+    - name: node
+      version: "22"
+  mcpServers: {}
+  memory:
+    - path: CLAUDE.md
+      content: |
+        # Working agreements
+
+        The run workspace holds two repositories: `backend/` and `frontend/`.
+        Task attachments are in `task-attachments/`. Notes you write for later
+        steps go in `handoff/` (outside both repositories, never committed).
+
+        - Read the code before changing it and follow the conventions of the repository you are in.
+        - Keep changes focused on the task. No unrelated refactors.
+        - New fields and parameters are optional and backward compatible.
+        - Add or update tests with every change, and run them.
+        - Commit in each repository with clear messages. Never push: pushing happens after human approval.
+        - When something cannot be done as asked, say so plainly rather than working around it silently.
+  skills:
+    - name: frontend-handoff
+      content: |
+        ---
+        name: frontend-handoff
+        description: Use after a backend change, to write the API contract the frontend implementation will follow.
+        ---
+        Write `handoff/frontend-contract.md` from the backend diff:
+        - Every new or changed endpoint: method, route, request body (each field, type, required or not),
+          a realistic response example, and every error status with its message.
+        - New or changed fields on existing objects, marked read-only when the server computes them.
+        - What the UI must not send or recompute.
+        - Which screens are affected, with states (loading, empty, error) and who can see what.
+        Read the controller, DTOs and service; do not guess.
+    - name: pr-description
+      content: |
+        ---
+        name: pr-description
+        description: Use when asked to write a pull request title or description.
+        ---
+        Title: a conventional commit, lowercase after the type (`feat: ...`, `fix: ...`, `chore: ...`), under 72 characters.
+        Description: one or two sentences on what and why, then a short list of the main changes,
+        then how it was tested (commands and results). Mention what is deliberately not included.
+        No secrets, no internal URLs, no headings beyond what is needed.
+  services:
+    - name: mongo
+      image: mongo:7
+      ports: [27017]
+      env: {}
+  network:
+    allow:
+      - github.com
+      - api.github.com
+      - "*.githubusercontent.com"
+      - registry.npmjs.org
+      - registry.yarnpkg.com
+      - nodejs.org
+      - "*.jdx.dev"
+      - cdn.playwright.dev
+      - "*.staging.example.com"
+  env:
+    CI: "true"
+    MONGODB_URI: mongodb://mongo:27017/test
+    STAGING_APP_URL: https://app.staging.example.com
+    STAGING_API_URL: https://api.staging.example.com
+  secrets:
+    - CLAUDE_CODE_OAUTH_TOKEN
+  mounts: []
+
+notifications:
+  - name: phone
+    url: "https://ntfy.sh/{{secrets.NTFY_TOPIC | url}}"
+    method: POST
+    headers:
+      Content-Type: text/plain
+      Title: "{{title}}"
+      Click: "{{run.url}}"
+    body: "{{message}}"
+
+steps:
+  # ── Intake ─────────────────────────────────────────────────────────────────
+  - id: notify_start
+    type: notify
+    name: Tell me a task was picked up
+    with:
+      message: "Picked up: {{= coalesce(trigger.task.name, trigger.title, trigger.task.id, 'a request') }} {{trigger.task.url}}"
+
+  - id: task
+    type: clickup_fetch_task
+    name: Fetch the ClickUp task
+    if: "!isEmpty(trigger.task.id)"
+    with:
+      taskId: "{{trigger.task.id}}"
+      includeComments: true
+      includeSubtasks: true
+      downloadAttachments: true
+
+  # Branch: <task id>-<slug of the title>, e.g. 86a8y386n-reverse-and-repost.
+  - id: clone_backend
+    type: git_clone
+    name: Clone the backend
+    with:
+      repo: your-org/backend
+      path: backend
+      branch: "{{= coalesce(trigger.task.id, 'req-' + run.id) }}-{{= coalesce(steps.task.output.name, trigger.task.name, trigger.title, trigger.request) | slug }}"
+
+  - id: clone_frontend
+    type: git_clone
+    name: Clone the frontend
+    with:
+      repo: your-org/frontend
+      path: frontend
+      branch: "{{repos.backend.branch}}"
+
+  - id: install
+    type: shell
+    name: Install dependencies
+    with:
+      cwd: "."
+      command: |
+        set -e
+        (cd backend && npm ci)
+        (cd frontend && npm ci)
+
+  # ── Plan ───────────────────────────────────────────────────────────────────
+  # Read-only: in "default" permission mode a headless run is refused every tool
+  # that is not listed, so Claude can look but not change anything yet.
+  - id: plan
+    type: claude
+    name: Plan the change (read only)
+    with:
+      cwd: "."
+      permissionMode: default
+      allowedTools: "Read,Grep,Glob,LS,Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(ls:*),Bash(cat:*)"
+      prompt: |
+        You are planning a change. Do not modify any file yet.
+
+        Request: {{= coalesce(steps.task.output.name, trigger.task.name, trigger.title) }}
+        Link: {{= coalesce(steps.task.output.url, trigger.task.url, 'none') }}
+
+        {{= coalesce(steps.task.output.description, trigger.task.description, trigger.request) }}
+
+        Comments: {{steps.task.output.comments}}
+        Subtasks: {{steps.task.output.subtasks}}
+        Attachments (read them): {{steps.task.output.attachmentFiles}}
+        Kind given by the requester: {{= coalesce(trigger.kind, 'not given') }}
+
+        The backend is in backend/ and the frontend in frontend/. Read the code involved.
+        Write a short plan: what you will change in each repository and why, the risks,
+        and anything you cannot decide alone. For a bug, state where the cause is.
+
+        End your answer with exactly these four lines:
+        KIND: feature | bug | chore
+        BACKEND: yes | no
+        FRONTEND: yes | no
+        BLOCKERS: none | <what you need from a human>
+
+  - id: plan_review
+    type: approval
+    name: Approve the plan
+    with:
+      message: |
+        Plan for {{= coalesce(steps.task.output.name, trigger.task.name, trigger.title) }}:
+
+        {{steps.plan.output.result}}
+
+        Approve to implement it. Reject with a comment to change the plan or answer the blockers.
+      onReject: plan
+
+  # ── Implement ──────────────────────────────────────────────────────────────
+  - id: reproduce
+    type: claude
+    name: Reproduce the bug with a failing test
+    if: "contains(steps.plan.output.result, 'KIND: bug')"
+    with:
+      cwd: "."
+      prompt: |
+        Before fixing anything, write the smallest automated test that reproduces the bug,
+        in the repository where the cause is. Run it and confirm it fails for the reason
+        in the plan. Do not fix the bug yet and do not commit.
+
+  - id: implement_backend
+    type: claude
+    name: Implement the backend
+    if: "contains(steps.plan.output.result, 'BACKEND: yes')"
+    with:
+      cwd: "."
+      prompt: |
+        Implement the backend part of the approved plan in backend/ (cd into it).
+        Follow its conventions, add or update tests, run the tests you touched,
+        and commit in backend/ when they pass.
+
+  - id: handoff
+    type: claude
+    name: Write the API contract for the frontend
+    if: "contains(steps.plan.output.result, 'BACKEND: yes') && contains(steps.plan.output.result, 'FRONTEND: yes')"
+    with:
+      cwd: "."
+      prompt: Use the frontend-handoff skill to write handoff/frontend-contract.md from the backend changes you just committed.
+
+  - id: implement_frontend
+    type: claude
+    name: Implement the frontend
+    if: "contains(steps.plan.output.result, 'FRONTEND: yes')"
+    with:
+      cwd: "."
+      prompt: |
+        Implement the frontend part of the approved plan in frontend/ (cd into it).
+        If handoff/frontend-contract.md exists, it is the API contract: follow it exactly.
+        Follow the frontend's conventions, add or update tests where the project has them,
+        and commit in frontend/.
+
+  - id: self_review
+    type: claude
+    name: Review the change and fix what is wrong
+    with:
+      cwd: "."
+      prompt: |
+        Review your own change as a strict reviewer, in each repository you changed:
+        `git diff origin/{{repos.backend.baseBranch}}...HEAD` in backend/ and
+        `git diff origin/{{repos.frontend.baseBranch}}...HEAD` in frontend/.
+        Look for correctness bugs, missing edge cases, security issues (tenant scoping,
+        permissions, unvalidated input), backward compatibility, and missing tests.
+        Fix what you find and commit. List what you checked and what you changed.
+
+  # ── Checks, with a fix loop per repository ─────────────────────────────────
+  - id: backend_checks
+    type: shell
+    name: Backend checks
+    if: "contains(steps.plan.output.result, 'BACKEND: yes')"
+    with:
+      cwd: backend
+      continueOnError: true
+      command: npm run lint && npm test
+
+  - id: backend_fix
+    type: claude
+    name: Fix the backend checks
+    if: "contains(steps.plan.output.result, 'BACKEND: yes') && !steps.backend_checks.output.passed"
+    with:
+      cwd: "."
+      prompt: |
+        The backend checks failed (in backend/). Find the cause, fix it, and commit.
+        If a failure is not caused by this change, say so and do not hide it.
+
+        {{steps.backend_checks.output.output}}
+
+  - id: backend_ok
+    type: condition
+    name: Backend checks passed?
+    with:
+      expression: "!contains(steps.plan.output.result, 'BACKEND: yes') || steps.backend_checks.output.passed"
+      else: backend_checks
+      maxRepeats: 3
+
+  - id: frontend_checks
+    type: shell
+    name: Frontend checks
+    if: "contains(steps.plan.output.result, 'FRONTEND: yes')"
+    with:
+      cwd: frontend
+      continueOnError: true
+      command: npm run lint && npm run build
+
+  - id: frontend_fix
+    type: claude
+    name: Fix the frontend checks
+    if: "contains(steps.plan.output.result, 'FRONTEND: yes') && !steps.frontend_checks.output.passed"
+    with:
+      cwd: "."
+      prompt: |
+        The frontend checks failed (in frontend/). Find the cause, fix it, and commit.
+
+        {{steps.frontend_checks.output.output}}
+
+  - id: frontend_ok
+    type: condition
+    name: Frontend checks passed?
+    with:
+      expression: "!contains(steps.plan.output.result, 'FRONTEND: yes') || steps.frontend_checks.output.passed"
+      else: frontend_checks
+      maxRepeats: 3
+
+  # ── Human review, then draft pull requests so the branches can be deployed ─
+  - id: code_review
+    type: approval
+    name: Review the diff
+    with:
+      message: |
+        Checks are green on branch {{repos.backend.branch}}.
+        Inspect the diff with the shell on this run (backend/ and frontend/).
+
+        Self review: {{steps.self_review.output.result}}
+
+        Approve to push the branches as draft pull requests. Reject with a comment to ask for changes.
+      onReject: self_review
+
+  - id: changes
+    type: shell
+    name: Which repositories changed
+    with:
+      cwd: "."
+      command: |
+        changed() { [ -n "$(git -C "$1" status --porcelain)" ] || [ "$(git -C "$1" rev-list --count "origin/$2..HEAD")" -gt 0 ]; }
+        changed backend {{repos.backend.baseBranch}} && echo "backend=changed" || echo "backend=unchanged"
+        changed frontend {{repos.frontend.baseBranch}} && echo "frontend=changed" || echo "frontend=unchanged"
+
+  - id: draft_backend
+    type: github_pr
+    name: Push the backend as a draft PR
+    if: "contains(steps.changes.output.output, 'backend=changed')"
+    with:
+      repo: backend
+      draft: true
+      title: "{{= contains(steps.plan.output.result, 'KIND: bug') ? 'fix: ' : 'feat: ' }}{{= coalesce(steps.task.output.name, trigger.task.name, trigger.title) }}"
+      body: "Work in progress. {{= coalesce(steps.task.output.url, trigger.task.url, '') }}"
+
+  - id: draft_frontend
+    type: github_pr
+    name: Push the frontend as a draft PR
+    if: "contains(steps.changes.output.output, 'frontend=changed')"
+    with:
+      repo: frontend
+      draft: true
+      title: "{{= contains(steps.plan.output.result, 'KIND: bug') ? 'fix: ' : 'feat: ' }}{{= coalesce(steps.task.output.name, trigger.task.name, trigger.title) }}"
+      body: "Work in progress. Backend: {{= coalesce(steps.draft_backend.output.url, 'no backend change') }}"
+
+  # ── Staging ────────────────────────────────────────────────────────────────
+  - id: staging
+    type: approval
+    name: Deploy to staging
+    with:
+      message: |
+        Deploy branch {{repos.backend.branch}} to staging, then approve.
+        Backend PR: {{= coalesce(steps.draft_backend.output.url, 'none') }}
+        Frontend PR: {{= coalesce(steps.draft_frontend.output.url, 'none') }}
+        Reject with a comment if something has to change first.
+      onReject: self_review
+
+  - id: verify
+    type: claude
+    name: Verify on staging
+    with:
+      cwd: "."
+      prompt: |
+        The change is deployed to staging: app at $STAGING_APP_URL, API at $STAGING_API_URL.
+        Check every requirement of the approved plan against staging: call the API for backend
+        behaviour (including error cases), and drive the UI with Playwright for frontend
+        behaviour, saving screenshots to handoff/screenshots/. Launch the browser with
+        proxy: { server: process.env.HTTPS_PROXY }. If a browser cannot run here, say so and
+        test what you can through the API.
+        If you find a problem, fix it in the repository and commit.
+
+        End with exactly one line:
+        VERDICT: pass   (everything works, nothing changed)
+        VERDICT: fixed  (you committed fixes; staging needs the new commits)
+        VERDICT: fail   (something is wrong that you could not fix; explain above)
+
+  # A fix or a failure goes back through the checks, your review and staging.
+  - id: verified
+    type: condition
+    name: Verified on staging?
+    with:
+      expression: "contains(steps.verify.output.result, 'VERDICT: pass')"
+      else: backend_checks
+      maxRepeats: 2
+
+  # ── Pull requests ──────────────────────────────────────────────────────────
+  - id: pr_title
+    type: claude
+    name: Write the PR title
+    with:
+      cwd: "."
+      prompt: Use the pr-description skill. Answer with the pull request title only, one line, nothing else.
+
+  - id: backend_pr_body
+    type: claude
+    name: Write the backend PR description
+    if: "contains(steps.changes.output.output, 'backend=changed')"
+    with:
+      cwd: "."
+      prompt: Use the pr-description skill to write the description of the backend pull request (the changes in backend/), including how it was tested and verified on staging. Answer with the description only.
+
+  - id: frontend_pr_body
+    type: claude
+    name: Write the frontend PR description
+    if: "contains(steps.changes.output.output, 'frontend=changed')"
+    with:
+      cwd: "."
+      prompt: Use the pr-description skill to write the description of the frontend pull request (the changes in frontend/), including how it was tested and verified on staging. Answer with the description only.
+
+  - id: final_approval
+    type: approval
+    name: Final approval
+    with:
+      message: |
+        Verified on staging. Approve to update the pull requests and mark them ready for review.
+
+        {{steps.pr_title.output.result}}
+
+        Backend:
+        {{= coalesce(steps.backend_pr_body.output.result, 'no backend change') }}
+
+        Frontend:
+        {{= coalesce(steps.frontend_pr_body.output.result, 'no frontend change') }}
+      onReject: self_review
+
+  - id: pr_backend
+    type: github_pr
+    name: Mark the backend PR ready
+    if: "contains(steps.changes.output.output, 'backend=changed')"
+    with:
+      repo: backend
+      title: "{{= trim(steps.pr_title.output.result) }}"
+      body: |
+        {{= coalesce(steps.task.output.url, trigger.task.url, '') }}
+
+        {{steps.backend_pr_body.output.result}}
+
+        {{= isEmpty(steps.draft_frontend.output.url) ? '' : 'Frontend: ' + steps.draft_frontend.output.url }}
+
+  - id: pr_frontend
+    type: github_pr
+    name: Mark the frontend PR ready
+    if: "contains(steps.changes.output.output, 'frontend=changed')"
+    with:
+      repo: frontend
+      title: "{{= trim(steps.pr_title.output.result) }}"
+      body: |
+        {{= coalesce(steps.task.output.url, trigger.task.url, '') }}
+
+        {{steps.frontend_pr_body.output.result}}
+
+        {{= isEmpty(steps.pr_backend.output.url) ? '' : 'Backend: ' + steps.pr_backend.output.url }}
+
+  - id: link_back
+    type: clickup_comment
+    name: Link the pull requests on the task
+    if: "!isEmpty(trigger.task.id)"
+    with:
+      taskId: "{{trigger.task.id}}"
+      comment: |
+        Pull requests:
+        {{= isEmpty(steps.pr_backend.output.url) ? '' : 'Backend: ' + steps.pr_backend.output.url }}
+        {{= isEmpty(steps.pr_frontend.output.url) ? '' : 'Frontend: ' + steps.pr_frontend.output.url }}
+
+  - id: notify_done
+    type: notify
+    name: Tell me it is done
+    with:
+      message: "Ready for review: {{= coalesce(steps.pr_backend.output.url, '') }} {{= coalesce(steps.pr_frontend.output.url, '') }}"

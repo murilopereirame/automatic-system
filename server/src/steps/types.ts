@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { ExecOptions, ExecResult } from '../sandbox/agent.js';
 import type { FieldSpec, Run, RunContext, StepConfig, Workflow } from '../types.js';
 
@@ -8,7 +9,7 @@ export interface StepRuntime {
   step: StepConfig;
   /** Shared, mutable run state. Changes are persisted when the step finishes. */
   context: RunContext;
-  /** The values templates and expressions can read: trigger, steps, previous, run, repo. */
+  /** The values templates and expressions can read: trigger, steps, previous, run, repo, repos. */
   scope: Record<string, unknown>;
   /** The step's settings with `{{ templates }}` already rendered. */
   params: Record<string, unknown>;
@@ -50,3 +51,32 @@ export function flag(params: Record<string, unknown>, key: string, fallback = fa
   const value = params[key];
   return value === undefined || value === null || value === '' ? fallback : value === true || value === 'true';
 }
+
+/**
+ * Resolves a folder a block was told to use, relative to the run workspace.
+ * Refuses absolute paths and anything that would leave the workspace, so a
+ * setting (or a value templated into it) can never point a block elsewhere.
+ */
+export function workspacePath(workspace: string, relative: string): string {
+  const value = relative.trim();
+  if (path.isAbsolute(value)) throw new Error(`"${relative}" must be a folder inside the run workspace, not an absolute path`);
+  const resolved = path.resolve(workspace, value);
+  const inside = path.relative(workspace, resolved);
+  if (inside.startsWith('..') || path.isAbsolute(inside)) throw new Error(`"${relative}" is outside the run workspace`);
+  return resolved;
+}
+
+/** The directory a block's commands run in: its `cwd` setting when given, otherwise the default working directory. */
+export function blockCwd(runtime: Pick<StepRuntime, 'params' | 'run' | 'workdir'>): string {
+  const cwd = text(runtime.params, 'cwd');
+  return cwd ? workspacePath(runtime.run.workspace, cwd) : runtime.workdir;
+}
+
+/** The `cwd` setting shared by blocks that run commands. */
+export const cwdField: FieldSpec = {
+  key: 'cwd',
+  label: 'Folder',
+  type: 'text',
+  placeholder: 'The cloned repository',
+  help: 'Relative to the run workspace, e.g. "frontend" for a repository cloned into that folder, or "." for the workspace itself.',
+} as const;
