@@ -122,7 +122,9 @@ flowchart TD
 
 `run.stepIndex` always points at the block that is running, waiting or that
 failed. Resuming after an approval and retrying after a failure are therefore
-the same operation: continue from `stepIndex`.
+the same operation: continue from `stepIndex`. A retry also sets the
+`maxRepeats` counters of the condition blocks back to zero, so a run that
+failed because it had gone back too often can go back again.
 
 A run keeps a copy of the workflow definition it started with, so editing a
 workflow never changes runs that are in flight.

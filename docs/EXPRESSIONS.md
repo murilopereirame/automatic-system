@@ -73,8 +73,12 @@ flowchart TD
 Going back is how a workflow retries: here the tests run again after Claude's
 fix, and on the second pass `fix` is skipped because the tests are green. To
 keep a condition that never becomes true from looping forever, each condition
-block may go back only `maxRepeats` times. After that the run fails, and
-**Retry** checks the condition once more.
+block may go back only `maxRepeats` times. After that the run fails.
+
+**Retry** on such a run starts the count again from zero: the condition is
+checked once more, and if it is still false the run goes back as before, up
+to `maxRepeats` more times. This holds for every retry, whatever block the
+run stopped at.
 
 ## What an expression can read
 

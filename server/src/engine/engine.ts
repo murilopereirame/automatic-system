@@ -231,11 +231,20 @@ export function cancelRun(runId: string): void {
   finish(run, 'cancelled', 'Cancelled');
 }
 
-/** Continues a failed or cancelled run from the step it stopped at. */
+/**
+ * Continues a failed or cancelled run from the step it stopped at.
+ *
+ * A retry is a person saying "try again", so the going-back counters of the
+ * condition blocks start from zero. Without that, a run that failed because a
+ * condition used up its `maxRepeats` would fail again right away: the
+ * condition is still false and it would have no repeats left.
+ */
 export function retryRun(runId: string): void {
   const run = runs.getRun(runId);
   if (!run || !['failed', 'cancelled'].includes(run.status)) throw new Error('Only failed or cancelled runs can be retried');
   runs.dismissPendingApprovals(runId);
+  run.context.repeats = {};
+  runs.saveRun(run);
   runs.addEvent(run.id, null, 'retried', { fromStep: run.definition.steps[run.stepIndex]?.id });
   void executeRun(runId);
 }
