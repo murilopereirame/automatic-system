@@ -32,7 +32,7 @@ const clickup = await mockApi(({ method, url }) => {
   return undefined;
 });
 // Pull requests opened against the stand-in GitHub, so a second push finds the first one.
-const openPullRequests: { repo: string; number: number; head: string; draft: boolean; node_id: string; html_url: string }[] = [];
+const openPullRequests: { repo: string; number: number; head: string; title: string; draft: boolean; node_id: string; html_url: string }[] = [];
 const github = await mockApi(({ method, url, body }) => {
   if (url === '/user') return { id: 42, login: 'octo', name: 'Octo Cat', email: null };
   if (method === 'POST' && url === '/repos/acme/app/pulls') return { number: 5, html_url: `https://github.com/acme/app/pull/5`, title: body.title };
@@ -41,10 +41,10 @@ const github = await mockApi(({ method, url, body }) => {
     const head = new URLSearchParams(list[2]).get('head');
     return openPullRequests.filter((pr) => pr.repo === list[1] && `acme:${pr.head}` === head);
   }
-  const create = url.match(/^\/repos\/acme\/(api|web)\/pulls$/);
+  const create = url.match(/^\/repos\/acme\/(api|web|keep)\/pulls$/);
   if (method === 'POST' && create) {
     const number = 10 + openPullRequests.length;
-    const pr = { repo: create[1], number, head: body.head, draft: body.draft, node_id: `PR_${create[1]}`, html_url: `https://github.com/acme/${create[1]}/pull/${number}` };
+    const pr = { repo: create[1], number, head: body.head, title: body.title, draft: body.draft, node_id: `PR_${create[1]}`, html_url: `https://github.com/acme/${create[1]}/pull/${number}` };
     openPullRequests.push(pr);
     return pr;
   }
@@ -329,4 +329,80 @@ test('a Claude block in another folder starts a new conversation instead of fail
   assert.equal((finished.context.steps.second.output as any).result, 'Done');
   assert.equal((finished.context.steps.third.output as any).result, 'Done (resumed)');
   assert.ok(runs.listEvents(run.id).some((event) => event.stepId === 'second' && event.type === 'claude_new_session'));
+});
+
+test('a clone continues the most recently updated branch matching a pattern, or creates its own', async () => {
+  const bare = bareRepository('cont');
+  const seed = path.join(tempDir, 'seed-cont');
+  const git = (cwd: string, env: Record<string, string>, ...args: string[]) =>
+    execFileSync('git', ['-c', 'user.name=Seed', '-c', 'user.email=seed@example.com', ...args], { cwd, encoding: 'utf8', env: { ...process.env, ...env } });
+  const heads: Record<string, string> = {};
+  for (const [branch, date] of [['t9-newer', '2026-11-02T10:00:00Z'], ['t9-older', '2026-11-01T10:00:00Z']]) {
+    git(seed, {}, 'checkout', '--quiet', '-B', branch, 'main');
+    writeFileSync(path.join(seed, `${branch}.txt`), 'work\n');
+    git(seed, {}, 'add', '.');
+    git(seed, { GIT_COMMITTER_DATE: date, GIT_AUTHOR_DATE: date }, 'commit', '--quiet', '-m', branch);
+    git(seed, {}, 'push', '--quiet', bare, branch);
+    heads[branch] = git(seed, {}, 'rev-parse', 'HEAD').trim();
+  }
+  const gitConfig = path.join(tempDir, 'gitconfig-cont');
+  writeFileSync(gitConfig, `[url "file://${path.join(tempDir, 'remotes')}/"]\n\tinsteadOf = https://github.com/\n`);
+  const workflow = createWorkflow({
+    name: 'continue',
+    definition: {
+      ...noSteps,
+      triggers: [],
+      environment: { ...emptyEnvironment(), env: { GIT_CONFIG_GLOBAL: gitConfig } },
+      steps: [
+        { id: 'found', type: 'git_clone', with: { repo: 'acme/cont', path: 'found', reuseBranch: 't9-*', branch: 't9-unused' } },
+        { id: 'missing', type: 'git_clone', with: { repo: 'acme/cont', path: 'missing', reuseBranch: 'zz1-*', branch: 'zz1-new' } },
+        { id: 'where', type: 'shell', with: { cwd: 'found', command: 'git rev-parse --abbrev-ref HEAD; git rev-parse --abbrev-ref @{upstream}' } },
+      ],
+    },
+  });
+  const run = engine.startRun(workflow, {});
+  await engine.waitForIdle();
+  const finished = runs.getRun(run.id)!;
+  assert.equal(finished.error, undefined);
+
+  const found = finished.context.steps.found.output as any;
+  assert.deepEqual([found.branch, found.reused, found.startCommit], ['t9-newer', true, heads['t9-newer']]);
+  assert.equal((finished.context.steps.where.output as any).output.trim(), 't9-newer\norigin/t9-newer', 'tracks the remote branch');
+  assert.ok(runs.listEvents(run.id).some((event) => /Several branches match t9-\*: t9-newer, t9-older/.test(String(event.data.message))));
+
+  const missing = finished.context.steps.missing.output as any;
+  assert.deepEqual([missing.branch, missing.reused, missing.startCommit], ['zz1-new', false, git(bare, {}, 'rev-parse', 'main').trim()]);
+});
+
+test('a pull request block set to keep pushes to an existing pull request without changing it', async () => {
+  bareRepository('keep');
+  const gitConfig = path.join(tempDir, 'gitconfig-keep');
+  writeFileSync(gitConfig, `[url "file://${path.join(tempDir, 'remotes')}/"]\n\tinsteadOf = https://github.com/\n`);
+  const commit = (file: string) => `echo change > ${file} && git add . && git -c user.name=Bot -c user.email=bot@example.com commit --quiet -m ${file}`;
+  const workflow = createWorkflow({
+    name: 'keep',
+    definition: {
+      ...noSteps,
+      triggers: [],
+      environment: { ...emptyEnvironment(), env: { GIT_CONFIG_GLOBAL: gitConfig } },
+      steps: [
+        { id: 'clone', type: 'git_clone', with: { repo: 'acme/keep', branch: 'keep-branch' } },
+        { id: 'one', type: 'shell', with: { command: commit('one.txt') } },
+        { id: 'open', type: 'github_pr', with: { title: 'feat: by a person', body: 'Written by a person.', draft: true } },
+        { id: 'two', type: 'shell', with: { command: commit('two.txt') } },
+        { id: 'follow_up', type: 'github_pr', with: { title: 'fix: from the comments', body: 'Would overwrite.', existing: 'keep' } },
+      ],
+    },
+  });
+  const requestsBefore = github.requests.length;
+  const run = engine.startRun(workflow, {});
+  await engine.waitForIdle();
+  const finished = runs.getRun(run.id)!;
+  assert.equal(finished.error, undefined);
+
+  assert.equal((finished.context.steps.follow_up.output as any).updated, true);
+  const ours = github.requests.slice(requestsBefore);
+  assert.equal(ours.some((request) => request.method === 'PATCH' || request.url === '/graphql'), false, 'title, description and draft state are left alone');
+  const pr = openPullRequests.find((candidate) => candidate.repo === 'keep')!;
+  assert.deepEqual([pr.title, pr.draft], ['feat: by a person', true]);
 });

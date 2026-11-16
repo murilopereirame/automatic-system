@@ -18,6 +18,7 @@ Complete examples:
 
 - [`examples/clickup-to-pr.formula.yaml`](../examples/clickup-to-pr.formula.yaml): one repository, from a ClickUp task to a pull request.
 - [`examples/task-to-pull-requests.formula.yaml`](../examples/task-to-pull-requests.formula.yaml): features and bug fixes across a backend and a frontend repository. See [Several repositories](#several-repositories).
+- [`examples/act-on-comments.formula.yaml`](../examples/act-on-comments.formula.yaml): follow-up on review comments. Reads the recent comments on a task, fixes what they ask for on the task's existing branches, and replies on the task. See [Following up on a branch](#following-up-on-a-branch).
 
 ## Structure
 
@@ -259,13 +260,13 @@ expression: when it is false the run skips the block. See
 | Type | What it does | Output |
 |------|--------------|--------|
 | `notify` | Calls the notification webhooks. `message`, optional `channel` (webhook name) | `delivered` |
-| `clickup_fetch_task` | Loads a ClickUp task. `taskId`, `includeComments`, `includeSubtasks`, `downloadAttachments` (saved to `task-attachments/` in the run workspace, next to the repository) | `id`, `name`, `description`, `url`, `status`, `comments`, `subtasks`, `attachments`, `attachmentFiles` |
-| `git_clone` | Clones a GitHub repository and creates the working branch. `repo` (`owner/name`), `baseBranch`, `branch`, `path` (folder in the workspace, default `repo`), `tokenSecret` | `owner`, `name`, `baseBranch`, `branch`, `path` |
+| `clickup_fetch_task` | Loads a ClickUp task. `taskId`, `includeComments` (the 25 most recent, each with its thread), `includeSubtasks`, `downloadAttachments` (task attachments and files pasted into comments, saved to `task-attachments/` in the run workspace, next to the repository) | `id`, `name`, `description`, `url`, `status`, `comments` (oldest first; each has `id`, `author`, `text`, `date`, `resolved`, `files` and `replies`), `subtasks`, `attachments`, `attachmentFiles` |
+| `git_clone` | Clones a GitHub repository and creates the working branch, or continues an existing one. `repo` (`owner/name`), `baseBranch`, `branch`, `reuseBranch` (a branch name or a pattern with `*`; the newest matching remote branch is checked out instead of creating `branch`), `path` (folder in the workspace, default `repo`), `tokenSecret` | `owner`, `name`, `baseBranch`, `branch`, `path`, `reused`, `startCommit` (where this run started on the branch) |
 | `claude` | Runs Claude Code with a `prompt`. Optional `model`, `permissionMode`, `allowedTools`, `maxTurns`, `continueSession`, `cwd` | `result`, `sessionId`, `costUsd`, `turns` |
 | `shell` | Runs a `command` as the agent user, e.g. tests. `continueOnError`, `cwd` | `exitCode`, `passed`, `output` |
 | `approval` | Pauses until you approve or reject. `message`, optional `onReject` (id of an earlier block) | `decision`, `comment` |
 | `condition` | An if/else. `expression`, optional `then` and `else` (a block id, or `$end` to finish the run), `maxRepeats`. See [EXPRESSIONS.md](EXPRESSIONS.md) | `result`, `branch`, `goTo` |
-| `github_pr` | Commits what is left, pushes the branch and opens a pull request as the owner of the token. Run again on the same branch, it pushes the new commits and updates that pull request (title, body, and from draft to ready when `draft` is off). `title`, `body`, `base`, `draft`, `repo` (clone folder), `tokenSecret` | `url`, `number`, `branch`, `updated` |
+| `github_pr` | Commits what is left, pushes the branch and opens a pull request as the owner of the token. When the branch already has an open pull request, it pushes the new commits and, with `existing: update` (the default), updates that pull request (title, body, and from draft to ready when `draft` is off); with `existing: keep` it leaves the pull request as it is. `title`, `body`, `base`, `draft`, `existing`, `repo` (clone folder), `tokenSecret` | `url`, `number`, `branch`, `updated` (true when the pull request already existed) |
 | `clickup_comment` | Comments on a ClickUp task. `taskId`, `comment` | `comment` |
 
 `cwd` is a folder relative to the run workspace, such as `frontend` or `.` for
@@ -301,6 +302,33 @@ flowchart LR
 - The first clone is the default folder for blocks without `cwd`, for `{{repo...}}` and for the web shell.
 - Claude Code keeps one conversation per folder. To keep a single conversation across both repositories, run the Claude blocks with `cwd: "."` and say in the prompt which folder to work in. A Claude block in a different folder than the conversation starts a new one (the run log says so).
 - Because `github_pr` can run twice on a branch, a workflow can push a draft early, for example so the branch can be deployed to staging, and make it ready after a final approval.
+
+### Following up on a branch
+
+`reuseBranch` on a clone picks up work that already exists, for example the branch an
+earlier run or a person pushed for the task. The commits of this run go on top of it, and
+`startCommit` tells them apart from the branch's earlier ones:
+
+```yaml
+steps:
+  - id: clone
+    type: git_clone
+    with:
+      repo: acme/api
+      reuseBranch: "{{trigger.task.id}}-*"         # newest branch named like 86a8y386n-...
+      branch: "{{trigger.task.id}}-{{trigger.task.name | slug}}"   # created when none matches
+  - id: fix
+    type: claude
+    with: { prompt: "Fix what the review asked for. This run's diff: git diff {{steps.clone.output.startCommit}}..HEAD" }
+  - id: push
+    type: github_pr
+    with: { existing: keep, title: "fix: ...", draft: true }   # a new draft only if the branch has no open pull request
+```
+
+- A branch that does not follow the naming can be given exactly: `reuseBranch: "{{= coalesce(trigger.branch, trigger.task.id + '-*') }}"`.
+- `steps.<clone>.output.reused` says whether a branch was found, so a condition can end the run when there is nothing to follow up on.
+- With several matches the one with the newest commit wins, and the run log lists the others.
+- `existing: keep` never changes the title, description or draft state of an open pull request, so text a person wrote stays as it is.
 
 ### Approval and rework
 

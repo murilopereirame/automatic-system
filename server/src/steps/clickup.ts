@@ -1,9 +1,12 @@
 import path from 'node:path';
-import { addTaskComment, downloadAttachment, getTask } from '../clickup.js';
+import { addTaskComment, downloadAttachment, getTask, type ClickupComment } from '../clickup.js';
 import { errorMessage } from '../errors.js';
 import { agentWriteFile } from '../sandbox/agent.js';
 import { requireSecret } from '../store/secrets.js';
 import { flag, text, type StepType } from './types.js';
+
+/** A comment as later blocks see it: `files` are the paths of its downloaded images and files (their names, when not downloaded). */
+type CommentOutput = Omit<ClickupComment, 'attachments' | 'replies'> & { files: string[]; replies?: CommentOutput[] };
 
 const tokenField = { key: 'tokenSecret', label: 'ClickUp token secret', type: 'secret', default: 'CLICKUP_TOKEN' } as const;
 const taskField = { key: 'taskId', label: 'Task id', type: 'text', default: '{{trigger.task.id}}' } as const;
@@ -11,7 +14,7 @@ const taskField = { key: 'taskId', label: 'Task id', type: 'text', default: '{{t
 export const clickupFetchTaskStep: StepType = {
   type: 'clickup_fetch_task',
   title: 'Fetch ClickUp task',
-  description: 'Loads a ClickUp task: name, description, status and link, and optionally its comments, subtasks and attachments.',
+  description: 'Loads a ClickUp task: name, description, status and link, and optionally its comments (with their threads), subtasks and attachments.',
   fields: [
     taskField,
     { key: 'includeComments', label: 'Include comments', type: 'boolean', default: true },
@@ -21,7 +24,7 @@ export const clickupFetchTaskStep: StepType = {
       label: 'Download attachments into the workspace',
       type: 'boolean',
       default: true,
-      help: 'Files are saved next to the repository, in the task-attachments folder of the run workspace. Their paths are in {{steps.<id>.output.attachmentFiles}}.',
+      help: 'Files are saved next to the repository, in the task-attachments folder of the run workspace. Their paths are in {{steps.<id>.output.attachmentFiles}}, and each comment lists the images and files pasted into it as files.',
     },
     tokenField,
   ],
@@ -34,20 +37,41 @@ export const clickupFetchTaskStep: StepType = {
     log('log', { message: `Fetched ClickUp task "${task.name}" (${task.url})` });
 
     // Saved outside the cloned repository, so attachments are never committed by accident.
+    // Files pasted into comments are saved too, and each comment lists its own as `files`.
     const attachmentFiles: string[] = [];
-    if (flag(params, 'downloadAttachments', true)) {
-      for (const [index, attachment] of task.attachments.entries()) {
-        const file = path.join(run.workspace, 'task-attachments', `${index + 1}-${path.basename(attachment.title)}`);
-        try {
-          await agentWriteFile(file, await downloadAttachment(attachment.url));
-          attachmentFiles.push(file);
-        } catch (error) {
-          log('log', { message: `Attachment "${attachment.title}" was not downloaded: ${errorMessage(error)}` });
-        }
+    const saved = new Map<string, string>();
+    const save = async (attachment: { title: string; url: string }): Promise<string | undefined> => {
+      if (saved.has(attachment.url)) return saved.get(attachment.url);
+      const file = path.join(run.workspace, 'task-attachments', `${saved.size + 1}-${path.basename(attachment.title)}`);
+      try {
+        await agentWriteFile(file, await downloadAttachment(attachment.url));
+        saved.set(attachment.url, file);
+        return file;
+      } catch (error) {
+        log('log', { message: `Attachment "${attachment.title}" was not downloaded: ${errorMessage(error)}` });
+        return undefined;
       }
-      if (attachmentFiles.length > 0) log('log', { message: `Downloaded ${attachmentFiles.length} attachment(s)` });
+    };
+    const download = flag(params, 'downloadAttachments', true);
+    if (download) {
+      for (const attachment of task.attachments) {
+        const file = await save(attachment);
+        if (file) attachmentFiles.push(file);
+      }
     }
-    return { output: { ...task, attachmentFiles } };
+    const withFiles = async ({ attachments, replies, ...comment }: ClickupComment): Promise<CommentOutput> => {
+      const files: string[] = [];
+      for (const attachment of download ? attachments : []) {
+        const file = await save(attachment);
+        if (file) files.push(file);
+      }
+      const output: CommentOutput = { ...comment, files: download ? files : attachments.map((attachment) => attachment.title) };
+      if (replies) output.replies = await Promise.all(replies.map(withFiles));
+      return output;
+    };
+    const comments = task.comments ? await Promise.all(task.comments.map(withFiles)) : undefined;
+    if (saved.size > 0) log('log', { message: `Downloaded ${saved.size} attachment(s)` });
+    return { output: { ...task, ...(comments ? { comments } : {}), attachmentFiles } };
   },
 };
 

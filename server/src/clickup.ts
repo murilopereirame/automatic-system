@@ -11,9 +11,45 @@ export interface ClickupTask {
   attachments: { title: string; url: string }[];
   /** Present when the task was loaded with `subtasks: true`. */
   subtasks?: { id: string; name: string; status: string; url: string }[];
-  /** Present when the task was loaded with `comments: true`. Oldest first. */
-  comments?: { author: string; text: string; date: string }[];
+  /** Present when the task was loaded with `comments: true`. The 25 most recent, oldest first, each with its thread. */
+  comments?: ClickupComment[];
 }
+
+export interface ClickupComment {
+  id: string;
+  author: string;
+  text: string;
+  date: string;
+  /** Resolved in ClickUp: someone marked it as done. */
+  resolved: boolean;
+  /** Images and files pasted into the comment. */
+  attachments: { title: string; url: string }[];
+  /** Threaded replies, oldest first. Replies have no replies of their own. */
+  replies?: ClickupComment[];
+}
+
+/** Images and files inside a comment: ClickUp sends the comment as segments, and these carry an `image` or `attachment`. */
+function commentAttachments(segments: unknown): { title: string; url: string }[] {
+  if (!Array.isArray(segments)) return [];
+  return segments.flatMap((segment: any) => {
+    const file = segment?.image ?? segment?.attachment;
+    if (!file || typeof file.url !== 'string') return [];
+    return [{ title: String(file.title ?? file.name ?? segment.text ?? 'attachment'), url: file.url }];
+  });
+}
+
+function toComment(raw: any): ClickupComment {
+  return {
+    id: String(raw.id ?? ''),
+    author: String(raw.user?.username ?? ''),
+    text: String(raw.comment_text ?? ''),
+    date: new Date(Number(raw.date)).toISOString(),
+    resolved: raw.resolved === true,
+    attachments: commentAttachments(raw.comment),
+  };
+}
+
+const byDate = (a: ClickupComment, b: ClickupComment) => a.date.localeCompare(b.date);
 
 async function clickupRequest<T>(token: string, method: string, route: string, body?: unknown): Promise<T> {
   const response = await fetch(`${config.clickupApiUrl}${route}`, {
@@ -62,9 +98,17 @@ export async function getTask(token: string, taskId: string, include: { subtasks
   }
   if (include.comments) {
     const { comments } = await clickupRequest<{ comments: any[] }>(token, 'GET', `/task/${id}/comment`);
-    task.comments = comments
-      .map((comment) => ({ author: String(comment.user?.username ?? ''), text: String(comment.comment_text ?? ''), date: new Date(Number(comment.date)).toISOString() }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+    task.comments = await Promise.all(
+      comments.map(async (raw) => {
+        const comment = toComment(raw);
+        if (Number(raw.reply_count) > 0) {
+          const { comments: replies } = await clickupRequest<{ comments: any[] }>(token, 'GET', `/comment/${encodeURIComponent(comment.id)}/reply`);
+          comment.replies = replies.map(toComment).sort(byDate);
+        }
+        return comment;
+      }),
+    );
+    task.comments.sort(byDate);
   }
   return task;
 }

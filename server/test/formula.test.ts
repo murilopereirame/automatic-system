@@ -46,6 +46,33 @@ test('the full-stack example is valid, and every template expression in it parse
   }
 });
 
+test('the act-on-comments example continues the task branches and leaves open pull requests as they are', async () => {
+  const { checkExpression } = await import('../src/expression.js');
+  const { renderDeep } = await import('../src/template.js');
+  const { SCOPE_NAMES } = await import('../src/types.js');
+  const source = readFileSync(path.join(import.meta.dirname, '../../examples/act-on-comments.formula.yaml'), 'utf8');
+  const { definition } = parseFormula(source);
+
+  const clones = definition.steps.filter((step) => step.type === 'git_clone');
+  assert.deepEqual(clones.map((step) => [step.with.path, step.with.reuseBranch]), [
+    ['backend', "{{= coalesce(trigger.branch, trigger.task.id + '-*') }}"],
+    ['frontend', "{{= coalesce(trigger.branch, trigger.task.id + '-*') }}"],
+  ]);
+  const pullRequests = definition.steps.filter((step) => step.type === 'github_pr');
+  assert.deepEqual(pullRequests.map((step) => [step.with.repo, step.with.existing]), [['backend', 'keep'], ['frontend', 'keep']]);
+
+  for (const step of definition.steps) {
+    for (const value of Object.values(step.with)) {
+      if (typeof value !== 'string') continue;
+      for (const [, source] of value.matchAll(/\{\{=(.+?)\}\}/gs)) {
+        const expression = source.replace(/(?<!\|)\|(?!\|)\s*\w+\s*$/, '');
+        assert.doesNotThrow(() => checkExpression(expression, SCOPE_NAMES), `step ${step.id}: ${expression}`);
+      }
+    }
+    assert.doesNotThrow(() => renderDeep(step.with, { trigger: {}, steps: {}, run: { id: 'r1' } }), `step ${step.id}`);
+  }
+});
+
 test('rejects documents that are not formulas', () => {
   assert.throws(() => parseFormula('kind: Deployment'), /Not a formula/);
   assert.throws(() => parseFormula('{ not yaml'), /not valid YAML/);
