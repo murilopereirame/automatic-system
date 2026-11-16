@@ -6,6 +6,7 @@ import { CodeView } from '../components/CodeView.tsx';
 import { ErrorNote, PageHeader } from '../components/common.tsx';
 import { EnvironmentEditor } from '../components/EnvironmentEditor.tsx';
 import { NotificationsEditor } from '../components/NotificationsEditor.tsx';
+import { useRunNow } from '../components/RunNowDialog.tsx';
 import { useLoad } from '../hooks.ts';
 import { navigate } from '../router.ts';
 
@@ -18,6 +19,7 @@ const NEW_WORKFLOW: WorkflowDraft = {
   enabled: true,
   definition: {
     triggers: [],
+    inputs: [],
     environment: { runtimes: [], mcpServers: {}, memory: [], skills: [], services: [], network: { allow: [] }, env: {}, secrets: [], mounts: [] },
     notifications: [],
     steps: [],
@@ -58,6 +60,7 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
 
   const dirty = saved ? JSON.stringify(toDraft(saved)) !== JSON.stringify(draft) : true;
   const setDefinition = (changes: Partial<WorkflowDraft['definition']>) => setDraft({ ...draft, definition: { ...draft.definition, ...changes } });
+
   const fail = (reason: Error) => (setError(reason.message), setNotice(undefined));
 
   const save = async (): Promise<Workflow | undefined> => {
@@ -75,9 +78,10 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
     }
   };
 
-  const runNow = async () => {
+  const { runNow, dialog } = useRunNow(fail);
+  const saveAndRun = async () => {
     const workflow = dirty ? await save() : saved;
-    if (workflow) api.runWorkflow(workflow.id).then((run) => navigate(`/runs/${run.id}`), fail);
+    if (workflow) runNow(workflow);
   };
 
   const exportFormula = () => saved && api.exportFormula(saved.id).then((yaml) => download(`${saved.name.replace(/\W+/g, '-').toLowerCase()}.formula.yaml`, yaml), fail);
@@ -100,7 +104,7 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
             Delete
           </button>
         )}
-        <button onClick={runNow} disabled={!draft.name}>
+        <button onClick={saveAndRun} disabled={!draft.name}>
           Run now
         </button>
         <button className="primary" onClick={save} disabled={!dirty || !draft.name}>
@@ -137,10 +141,12 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
         <BlockPipeline
           meta={meta.data}
           triggers={draft.definition.triggers}
+          inputs={draft.definition.inputs ?? []}
           steps={draft.definition.steps}
           secretNames={secrets.data ?? []}
           hooks={saved && { workflowId: saved.id, secret: saved.hookSecret }}
           onTriggersChange={(triggers) => setDefinition({ triggers })}
+          onInputsChange={(inputs) => setDefinition({ inputs })}
           onStepsChange={(steps) => setDefinition({ steps })}
         />
       )}
@@ -149,6 +155,7 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
       )}
       {tab === 'Notifications' && <NotificationsEditor notifications={draft.definition.notifications} onChange={(notifications) => setDefinition({ notifications })} />}
       {tab === 'Code' && <CodeView draft={draft} onApply={(applied) => (setDraft(applied), setTab('Blocks'))} />}
+      {dialog}
     </>
   );
 }

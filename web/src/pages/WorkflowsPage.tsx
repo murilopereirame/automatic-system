@@ -1,6 +1,7 @@
 import { useRef, useState, type ChangeEvent } from 'react';
 import { api } from '../api.ts';
 import { Empty, ErrorNote, PageHeader } from '../components/common.tsx';
+import { useRunNow } from '../components/RunNowDialog.tsx';
 import { useLoad } from '../hooks.ts';
 import { navigate } from '../router.ts';
 
@@ -22,7 +23,7 @@ export function WorkflowsPage() {
     }
   };
 
-  const run = (id: string) => api.runWorkflow(id).then((started) => navigate(`/runs/${started.id}`), (reason: Error) => setError(reason.message));
+  const { runNow, dialog } = useRunNow((reason) => setError(reason.message));
   const triggerTitle = (type: string) => meta.data?.triggerTypes.find((trigger) => trigger.type === type)?.title ?? type;
 
   return (
@@ -53,11 +54,12 @@ export function WorkflowsPage() {
               </span>
             </a>
             <div className="actions">
-              <button onClick={() => run(workflow.id)}>Run now</button>
+              <button onClick={() => runNow(workflow)}>Run now</button>
             </div>
           </div>
         ))}
       </div>
+      {dialog}
     </>
   );
 }

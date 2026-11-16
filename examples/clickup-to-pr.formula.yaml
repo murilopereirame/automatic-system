@@ -26,6 +26,20 @@ triggers:
   - id: webhook
     type: webhook
 
+# What "Run now" asks for. The answers form the same payload the ClickUp trigger
+# sends, so the blocks below work for a task you pick by hand as well.
+inputs:
+  - name: task.id
+    label: ClickUp task id
+    help: The id at the end of the task link, e.g. 86a8y386n.
+    required: true
+  - name: task.name
+    label: Task name
+    help: Used for the branch name.
+    required: true
+  - name: task.url
+    label: Task link
+
 environment:
   runtimes:
     - name: node
