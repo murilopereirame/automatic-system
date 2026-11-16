@@ -12,9 +12,9 @@
  * handed only to the `git push` process. Place an approval block before this
  * step to make pushing depend on a human decision.
  */
-import { createPullRequest, findOpenPullRequest, getAuthenticatedUser, markPullRequestReady, updatePullRequest } from '../github.js';
+import { gitIdentityEnv, settingsIdentity, tokenOwnerIdentity } from '../git-identity.js';
+import { createPullRequest, findOpenPullRequest, markPullRequestReady, updatePullRequest } from '../github.js';
 import { requireSecret } from '../store/secrets.js';
-import { getSettings } from '../store/settings.js';
 import { gitAuthEnv } from './git.js';
 import { flag, text, type StepType } from './types.js';
 
@@ -65,16 +65,9 @@ export const githubPrStep: StepType = {
     const keepExisting = text(params, 'existing', 'update') === 'keep';
 
     // Author identity: explicit settings win, otherwise the owner of the token.
-    const settings = getSettings();
-    const user = await getAuthenticatedUser(token);
-    const authorName = settings.git.name || user.name || user.login;
-    const authorEmail = settings.git.email || user.email || `${user.id}+${user.login}@users.noreply.github.com`;
-    const identityEnv = {
-      GIT_AUTHOR_NAME: authorName,
-      GIT_AUTHOR_EMAIL: authorEmail,
-      GIT_COMMITTER_NAME: authorName,
-      GIT_COMMITTER_EMAIL: authorEmail,
-    };
+    const user = await tokenOwnerIdentity(token);
+    const author = settingsIdentity();
+    const identityEnv = gitIdentityEnv({ name: author.name || user.name, email: author.email || user.email });
 
     await exec('git', ['add', '--all']);
     const staged = await exec('git', ['diff', '--cached', '--quiet'], { quiet: true });

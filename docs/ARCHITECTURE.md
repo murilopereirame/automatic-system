@@ -261,3 +261,29 @@ Claude only receives the secrets a workflow lists under
 `environment.secrets`. The GitHub token used for pushing is not in that list
 in the example workflow, so Claude can commit but cannot push. Pushing happens
 in the pull request block, after the approval block before it.
+
+### Commit author
+
+Claude commits inside the sandbox long before the pull request block runs, so
+the author of a commit is decided for the whole sandbox, not by one block.
+`server/src/git-identity.ts` holds the rules:
+
+```mermaid
+flowchart TD
+    Q{Commit author<br/>under Settings?}
+    Q -->|yes| E["GIT_AUTHOR_* and GIT_COMMITTER_*<br/>in the environment of Claude,<br/>command blocks and the web shell"]
+    Q -->|no| G{"Identity set with<br/>git config in the web shell?"}
+    G -->|yes| K[Used as it is]
+    G -->|no| T["Clone block asks GitHub who owns the token<br/>and writes name and no-reply address<br/>into the clone's own git config"]
+```
+
+| Source | Where it lives | Wins over |
+| --- | --- | --- |
+| Commit author under Settings | Environment of every sandbox process (`baseEnv` in `sandbox/agent.ts`) | Everything below. A formula can still override the variables under `environment.env` |
+| `git config --global` in the web shell | `/home/agent/.gitconfig` on the `agent-home` volume | The token owner |
+| Owner of the GitHub token | `.git/config` of each clone, written by the clone block | Nothing: it only fills in what is missing |
+
+A name without an email (or the other way round) under Settings is completed
+from the next source. When none of the three gives an author, the clone block
+says so in the run log. Only the name and the address are written to the
+clone; the token itself never is.

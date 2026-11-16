@@ -24,7 +24,7 @@ flowchart LR
 | **Runs** | History of runs with their state and current block |
 | **Run** | Follow a run live, answer its approvals, open a shell, cancel or retry |
 | **Inbox** | Every approval that is waiting for you, across all runs. The number in the navigation is the count |
-| **Settings** | Secrets and the commit author |
+| **Settings** | Secrets and the commit author (used for every commit in a run, including the ones Claude makes) |
 
 ## Workflow editor
 
