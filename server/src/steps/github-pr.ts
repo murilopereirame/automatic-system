@@ -29,6 +29,14 @@ export const githubPrStep: StepType = {
     { key: 'base', label: 'Target branch', type: 'text', placeholder: 'Base branch of the clone' },
     { key: 'draft', label: 'Open as draft', type: 'boolean', default: false, help: 'When the pull request already exists as a draft, turning this off marks it ready for review.' },
     {
+      key: 'existing',
+      label: 'When the pull request already exists',
+      type: 'select',
+      options: ['update', 'keep'],
+      default: 'update',
+      help: 'update: set its title and description, and mark a draft ready when "Open as draft" is off. keep: only push the new commits and leave the pull request as it is, e.g. when following up on review comments.',
+    },
+    {
       key: 'repo',
       label: 'Repository folder',
       type: 'text',
@@ -54,6 +62,7 @@ export const githubPrStep: StepType = {
     const body = text(params, 'body');
     const base = text(params, 'base', repo.baseBranch);
     const draft = flag(params, 'draft');
+    const keepExisting = text(params, 'existing', 'update') === 'keep';
 
     // Author identity: explicit settings win, otherwise the owner of the token.
     const settings = getSettings();
@@ -84,9 +93,11 @@ export const githubPrStep: StepType = {
 
     const existing = await findOpenPullRequest(token, repo.owner, repo.name, repo.branch);
     if (existing) {
-      await updatePullRequest(token, repo.owner, repo.name, existing.number, { title, ...(body ? { body } : {}) });
-      if (existing.draft && !draft) await markPullRequestReady(token, existing.node_id);
-      log('pull_request', { url: existing.html_url, number: existing.number, author: user.login, updated: true, ready: !draft });
+      if (!keepExisting) {
+        await updatePullRequest(token, repo.owner, repo.name, existing.number, { title, ...(body ? { body } : {}) });
+        if (existing.draft && !draft) await markPullRequestReady(token, existing.node_id);
+      }
+      log('pull_request', { url: existing.html_url, number: existing.number, author: user.login, updated: true, ready: keepExisting ? !existing.draft : !draft });
       return { output: { url: existing.html_url, number: existing.number, branch: repo.branch, updated: true } };
     }
 

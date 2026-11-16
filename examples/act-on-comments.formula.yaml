@@ -1,0 +1,487 @@
+# Example formula: act on the review comments of a task. Give it a ClickUp task
+# whose branches already exist; it reads the recent comments, fixes what they ask
+# for on those branches, and replies on the task.
+#
+#   task id ─► fetch task + comment threads ─► clone both repos on the task's branches
+#     ─► triage the comments (read only) ─► YOU: approve the list
+#     ─► fixes on top of the branches ─► self review ─► checks + fix loops
+#     ─► YOU: review this run's commits ─► push (pull request text left as it is)
+#     ─► YOU: deploy to staging ─► verify each comment on staging (loops back on failure)
+#     ─► reply ─► YOU: approve the reply ─► comment on the task ─► notify
+#
+# Which comments: those after this workflow's previous reply on the task (a comment
+# starting with "🤖 Auto Worker"), or all of them the first time. Resolved comments,
+# questions and requests the branch already handles are skipped, and you see the
+# list before anything changes. ClickUp returns the 25 most recent comments.
+#
+# The branch is found by the task id: the most recently updated branch named
+# <task id>-* in each repository (e.g. 86a8y386n-reverse-and-repost). A repository
+# without one gets a new branch with the same name if a comment needs a change there,
+# and a new draft pull request.
+#
+# Start it with POST /hooks/<workflow id>/webhook?secret=<hook secret>, or "Run now":
+#   {"task": {"id": "86a8y386n"}}
+# Optional:
+#   "branch": "fix/login-redirect"     the branch to follow up on, when it is not named <task id>-*
+#   "since": "2026-11-10T09:00:00Z"   act only on comments after this time instead
+#   "note": "only the comments from QA, skip the copy changes"   extra instructions for the triage
+#   "staging": false                  skip the staging deploy and verification
+#
+# Replace your-org/backend and your-org/frontend, the commands in the "install",
+# "backend_checks" and "frontend_checks" blocks, and the staging hosts. Secrets:
+#   CLICKUP_TOKEN, GITHUB_TOKEN, CLAUDE_CODE_OAUTH_TOKEN (or ANTHROPIC_API_KEY), NTFY_TOPIC
+apiVersion: autoworker/v1
+kind: Formula
+metadata:
+  name: Act on task comments (backend and frontend)
+  description: Reads the recent comments on a task, fixes what they ask for on the task's existing branches, verifies on staging and replies on the task, with your approval at each gate.
+  enabled: false
+
+triggers:
+  - id: webhook
+    type: webhook
+
+environment:
+  runtimes:
+    - name: node
+      version: "22"
+  mcpServers: {}
+  memory:
+    - path: CLAUDE.md
+      content: |
+        # Working agreements
+
+        The run workspace holds two repositories, `backend/` and `frontend/`, each on the
+        task's branch, which already has work on it. Task attachments and the files pasted
+        into comments are in `task-attachments/`. Notes, scripts and screenshots go in
+        `handoff/` (outside both repositories, never committed).
+
+        - You are following up on review comments: change only what a comment asks for,
+          on top of what the branch already does. No rewrites, no unrelated refactors.
+        - Read the code before changing it and follow the conventions of the repository you are in.
+        - Add or update tests with every change, and run them.
+        - Commit in each repository with conventional messages (`fix: ...`). Never push, never
+          rewrite the branch's history: pushing happens after human approval.
+        - When a comment cannot be done as asked, say so plainly rather than working around it.
+  skills:
+    - name: staging-check
+      content: |
+        ---
+        name: staging-check
+        description: Use to check on staging that a review comment is addressed, with evidence.
+        ---
+        1. Check the deploy is live (the API and app URLs answer) and that it has this run's commits.
+           If it does not, say so instead of guessing.
+        2. API: call the endpoints involved with curl and assert status codes and bodies.
+        3. UI: install Playwright in `handoff/pw/` (never inside a repository), write one script per
+           comment, and save numbered screenshots in `handoff/screenshots/` at the step that shows it.
+           Compare with the screenshots in the comment when it has them.
+        4. Report PASS or FAIL per comment.
+  services:
+    - name: mongo
+      image: mongo:7
+      ports: [27017]
+      env: {}
+  network:
+    allow:
+      - github.com
+      - api.github.com
+      - "*.githubusercontent.com"
+      - registry.npmjs.org
+      - registry.yarnpkg.com
+      - nodejs.org
+      - "*.jdx.dev"
+      - cdn.playwright.dev
+      - "*.staging.example.com"
+  env:
+    CI: "true"
+    MONGODB_URI: mongodb://mongo:27017/test
+    STAGING_APP_URL: https://app.staging.example.com
+    STAGING_API_URL: https://api.staging.example.com
+  secrets:
+    - CLAUDE_CODE_OAUTH_TOKEN
+  mounts: []
+
+notifications:
+  - name: phone
+    url: "https://ntfy.sh/{{secrets.NTFY_TOPIC | url}}"
+    method: POST
+    headers:
+      Content-Type: text/plain
+      Title: "{{title}}"
+      Click: "{{run.url}}"
+    body: "{{message}}"
+
+steps:
+  # ── Intake ─────────────────────────────────────────────────────────────────
+  - id: task
+    type: clickup_fetch_task
+    name: Fetch the task and its comments
+    with:
+      taskId: "{{trigger.task.id}}"
+      includeComments: true
+      includeSubtasks: false
+      downloadAttachments: true
+
+  - id: notify_start
+    type: notify
+    name: Tell me the comments are being read
+    with:
+      message: "Reading the comments on {{steps.task.output.name}} {{steps.task.output.url}}"
+
+  # The task's branch in each repository: the newest <task id>-*. A repository without
+  # one gets a new branch named like the other repository's.
+  - id: clone_backend
+    type: git_clone
+    name: Clone the backend on the task's branch
+    with:
+      repo: your-org/backend
+      baseBranch: main
+      path: backend
+      reuseBranch: "{{= coalesce(trigger.branch, trigger.task.id + '-*') }}"
+      branch: "{{= isEmpty(trigger.branch) ? trigger.task.id + '-' : trigger.branch }}{{= isEmpty(trigger.branch) ? steps.task.output.name : '' | slug }}"
+
+  - id: clone_frontend
+    type: git_clone
+    name: Clone the frontend on the task's branch
+    with:
+      repo: your-org/frontend
+      baseBranch: main
+      path: frontend
+      reuseBranch: "{{= coalesce(trigger.branch, trigger.task.id + '-*') }}"
+      branch: "{{repos.backend.branch}}"
+
+  - id: no_branch
+    type: notify
+    name: Tell me there is no branch to follow up on
+    if: "!steps.clone_backend.output.reused && !steps.clone_frontend.output.reused"
+    with:
+      message: "No branch {{= coalesce(trigger.branch, trigger.task.id + '-*') }} in either repository, so there is nothing to follow up on. Use the task-to-pull-requests workflow for new work."
+
+  - id: has_branch
+    type: condition
+    name: Is there a branch to follow up on?
+    with:
+      expression: "steps.clone_backend.output.reused || steps.clone_frontend.output.reused"
+      else: $end
+
+  # ── Triage ─────────────────────────────────────────────────────────────────
+  # Read-only: in "default" permission mode a headless run is refused every tool
+  # that is not listed, so Claude can look but not change anything yet.
+  - id: triage
+    type: claude
+    name: Decide which comments to act on (read only)
+    with:
+      cwd: "."
+      permissionMode: default
+      allowedTools: "Read,Grep,Glob,LS,Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(ls:*),Bash(cat:*)"
+      prompt: |
+        You are triaging the review comments on a task. Do not modify any file.
+
+        Task: {{steps.task.output.name}} ({{steps.task.output.url}})
+        {{steps.task.output.description}}
+
+        Comments, oldest first, as JSON. `files` are the images and files pasted into a
+        comment (read them: screenshots usually show the problem), `replies` its thread,
+        `resolved` means someone marked it done in ClickUp:
+        {{steps.task.output.comments}}
+
+        backend/ is on {{repos.backend.branch}} ({{= steps.clone_backend.output.reused ? 'the task branch' : 'new, nothing on it yet' }}).
+        frontend/ is on {{repos.frontend.branch}} ({{= steps.clone_frontend.output.reused ? 'the task branch' : 'new, nothing on it yet' }}).
+        See what each already does with `git log --oneline origin/main..HEAD` and
+        `git diff origin/main...HEAD` in it.
+
+        Cut-off given when the run started: {{= coalesce(trigger.since, 'none') }}
+        - With a cut-off, consider only the comments and replies posted after it.
+        - Without one, consider those posted after the most recent comment that starts with
+          "🤖 Auto Worker" (this workflow's previous reply), or all of them if there is none.
+        - Skip resolved comments, comments that only ask a question or say thanks, and
+          requests the branch already handles (name the commit).
+        Instructions from the person who started the run: {{= coalesce(trigger.note, 'none') }}
+
+        Answer with:
+        1. A numbered list of the comments you will act on: author and date, the request in
+           your words, where the cause is (repository and file), and the fix you propose.
+        2. The comments you skip, each with the reason.
+        3. Anything a human has to decide.
+
+        End your answer with exactly these three lines:
+        BACKEND: yes | no
+        FRONTEND: yes | no
+        BLOCKERS: none | <what you need from a human>
+
+  - id: triage_review
+    type: approval
+    name: Approve the list of fixes
+    with:
+      message: |
+        Comments on {{steps.task.output.name}}:
+
+        {{steps.triage.output.result}}
+
+        Approve to make these fixes. Reject with a comment to change the list or answer the blockers.
+      onReject: triage
+
+  - id: nothing_to_do
+    type: notify
+    name: Tell me there is nothing to change
+    if: "!contains(steps.triage.output.result, 'BACKEND: yes') && !contains(steps.triage.output.result, 'FRONTEND: yes')"
+    with:
+      message: "Nothing to change for the comments on {{steps.task.output.name}}."
+
+  - id: anything_to_do
+    type: condition
+    name: Anything to change?
+    with:
+      expression: "contains(steps.triage.output.result, 'BACKEND: yes') || contains(steps.triage.output.result, 'FRONTEND: yes')"
+      else: $end
+
+  - id: install
+    type: shell
+    name: Install dependencies
+    with:
+      cwd: "."
+      command: |
+        set -e
+        mkdir -p handoff
+        {{= contains(steps.triage.output.result, 'BACKEND: yes') ? '(cd backend && npm ci)' : 'echo backend: nothing to change' }}
+        {{= contains(steps.triage.output.result, 'FRONTEND: yes') ? '(cd frontend && npm ci)' : 'echo frontend: nothing to change' }}
+
+  # ── Fix ────────────────────────────────────────────────────────────────────
+  - id: fix_backend
+    type: claude
+    name: Fix the backend comments
+    if: "contains(steps.triage.output.result, 'BACKEND: yes')"
+    with:
+      cwd: "."
+      prompt: |
+        Make the backend fixes from the approved list in backend/ (cd into it), on top of
+        what the branch already has. Add or update tests for each, run them, and commit in
+        backend/: one commit per comment unless they are the same change.
+
+  - id: fix_frontend
+    type: claude
+    name: Fix the frontend comments
+    if: "contains(steps.triage.output.result, 'FRONTEND: yes')"
+    with:
+      cwd: "."
+      prompt: |
+        Make the frontend fixes from the approved list in frontend/ (cd into it), on top of
+        what the branch already has. If you changed an API in backend/ just now, update the
+        frontend to match. Build the app you changed and commit in frontend/: one commit per
+        comment unless they are the same change.
+
+  - id: self_review
+    type: claude
+    name: Review this run's commits and fix what is wrong
+    with:
+      cwd: "."
+      prompt: |
+        Review this run's commits as a strict reviewer: `git diff {{steps.clone_backend.output.startCommit}}..HEAD`
+        in backend/ and `git diff {{steps.clone_frontend.output.startCommit}}..HEAD` in frontend/.
+        For each comment on the approved list, check the fix does what was asked and nothing
+        else, has a test where it can, and does not break what the branch did before. Check
+        that nothing unrelated was committed. Fix what you find and commit. List each comment
+        with how it was addressed.
+
+  # ── Checks, with a fix loop per repository ─────────────────────────────────
+  # Each check passes straight away when this run has not changed that repository.
+  - id: backend_checks
+    type: shell
+    name: Backend checks
+    with:
+      cwd: backend
+      continueOnError: true
+      command: |
+        if [ -z "$(git status --porcelain)" ] && [ "$(git rev-list --count {{steps.clone_backend.output.startCommit}}..HEAD)" = 0 ]; then
+          echo 'no changes in this run'; exit 0
+        fi
+        [ -d node_modules ] || npm ci
+        npm run lint && npm test
+
+  - id: backend_fix
+    type: claude
+    name: Fix the backend checks
+    if: "!steps.backend_checks.output.passed"
+    with:
+      cwd: "."
+      prompt: |
+        The backend checks failed (in backend/). Find the cause, fix it, and commit.
+        If a failure is not caused by this run's changes, say so and do not hide it.
+
+        {{steps.backend_checks.output.output}}
+
+  - id: backend_ok
+    type: condition
+    name: Backend checks passed?
+    with:
+      expression: steps.backend_checks.output.passed
+      else: backend_checks
+      maxRepeats: 3
+
+  - id: frontend_checks
+    type: shell
+    name: Frontend checks
+    with:
+      cwd: frontend
+      continueOnError: true
+      command: |
+        if [ -z "$(git status --porcelain)" ] && [ "$(git rev-list --count {{steps.clone_frontend.output.startCommit}}..HEAD)" = 0 ]; then
+          echo 'no changes in this run'; exit 0
+        fi
+        [ -d node_modules ] || npm ci
+        npm run lint && npm run build
+
+  - id: frontend_fix
+    type: claude
+    name: Fix the frontend checks
+    if: "!steps.frontend_checks.output.passed"
+    with:
+      cwd: "."
+      prompt: |
+        The frontend checks failed (in frontend/). Find the cause, fix it, and commit.
+
+        {{steps.frontend_checks.output.output}}
+
+  - id: frontend_ok
+    type: condition
+    name: Frontend checks passed?
+    with:
+      expression: steps.frontend_checks.output.passed
+      else: frontend_checks
+      maxRepeats: 3
+
+  # ── Review and push ────────────────────────────────────────────────────────
+  - id: code_review
+    type: approval
+    name: Review this run's commits
+    with:
+      message: |
+        Checks are green. Inspect this run's commits with the shell on this run:
+        backend/: git log {{steps.clone_backend.output.startCommit}}..HEAD
+        frontend/: git log {{steps.clone_frontend.output.startCommit}}..HEAD
+
+        {{steps.self_review.output.result}}
+
+        Approve to push the branches. Reject with a comment to ask for changes.
+      onReject: self_review
+
+  - id: changes
+    type: shell
+    name: Which repositories this run changed
+    with:
+      cwd: "."
+      command: |
+        changed() { [ -n "$(git -C "$1" status --porcelain)" ] || [ "$(git -C "$1" rev-list --count "$2..HEAD")" -gt 0 ]; }
+        changed backend {{steps.clone_backend.output.startCommit}} && echo "backend=changed" || echo "backend=unchanged"
+        changed frontend {{steps.clone_frontend.output.startCommit}} && echo "frontend=changed" || echo "frontend=unchanged"
+
+  # An open pull request keeps its title, description and draft state. A branch
+  # without one (new here, or its pull request was closed) gets a draft.
+  - id: push_backend
+    type: github_pr
+    name: Push the backend
+    if: "contains(steps.changes.output.output, 'backend=changed')"
+    with:
+      repo: backend
+      existing: keep
+      draft: true
+      title: "fix: {{= lower(steps.task.output.name) }}"
+      body: "Follows up on the review comments on {{steps.task.output.url}}."
+
+  - id: push_frontend
+    type: github_pr
+    name: Push the frontend
+    if: "contains(steps.changes.output.output, 'frontend=changed')"
+    with:
+      repo: frontend
+      existing: keep
+      draft: true
+      title: "fix: {{= lower(steps.task.output.name) }}"
+      body: "Follows up on the review comments on {{steps.task.output.url}}."
+
+  # ── Staging (skipped with "staging": false) ────────────────────────────────
+  - id: staging
+    type: approval
+    name: Deploy to staging
+    if: "trigger.staging != false"
+    with:
+      message: |
+        Deploy {{repos.backend.branch}} to staging again with the new commits, then approve.
+        Backend: {{= coalesce(steps.push_backend.output.url, 'not changed') }}
+        Frontend: {{= coalesce(steps.push_frontend.output.url, 'not changed') }}
+        Reject with a comment if something has to change first.
+      onReject: self_review
+
+  - id: verify
+    type: claude
+    name: Check each comment on staging
+    if: "trigger.staging != false"
+    with:
+      cwd: "."
+      prompt: |
+        The fixes are deployed to staging. Use the staging-check skill to check every
+        comment on the approved list there: the API at $STAGING_API_URL, the app at
+        $STAGING_APP_URL. Keep scripts and screenshots in handoff/.
+        If something is still wrong, fix it in the repository and commit.
+
+        End with exactly one line:
+        VERDICT: pass   (every comment is addressed on staging, nothing changed)
+        VERDICT: fixed  (you committed fixes; staging needs the new commits)
+        VERDICT: fail   (something is wrong that you could not fix; explain above)
+
+  - id: verified
+    type: condition
+    name: Verified on staging?
+    with:
+      expression: "trigger.staging == false || contains(steps.verify.output.result, 'VERDICT: pass')"
+      else: backend_checks
+      maxRepeats: 2
+
+  # ── Reply on the task ──────────────────────────────────────────────────────
+  - id: reply
+    type: claude
+    name: Write the reply for the task
+    with:
+      cwd: "."
+      prompt: |
+        Write the reply to post on the task, for the people who wrote the comments.
+        For each comment you acted on: who asked and what, in a few words; what changed;
+        and {{= trigger.staging == false ? 'that it was not checked on staging' : 'what you saw on staging' }}.
+        Then the comments you did not act on and why, and the questions for a human.
+        Plain text, short lines, no headings, no greeting, no commit hashes or file paths
+        unless they help the reader. Answer with the reply only.
+
+  - id: reply_review
+    type: approval
+    name: Approve the reply
+    with:
+      message: |
+        The branches are pushed.
+        Backend: {{= coalesce(steps.push_backend.output.url, 'not changed') }}
+        Frontend: {{= coalesce(steps.push_frontend.output.url, 'not changed') }}
+
+        Approve to post this reply on the task. Reject with a comment to change it.
+
+        {{steps.reply.output.result}}
+      onReject: reply
+
+  # The "🤖 Auto Worker" first line is how the next run finds where to start reading.
+  - id: post_reply
+    type: clickup_comment
+    name: Reply on the task
+    with:
+      taskId: "{{trigger.task.id}}"
+      comment: |
+        🤖 Auto Worker: review comments addressed
+
+        {{steps.reply.output.result}}
+
+        {{= isEmpty(steps.push_backend.output.url) ? '' : 'Backend: ' + steps.push_backend.output.url }}
+        {{= isEmpty(steps.push_frontend.output.url) ? '' : 'Frontend: ' + steps.push_frontend.output.url }}
+
+  - id: notify_done
+    type: notify
+    name: Tell me it is done
+    with:
+      message: "Comments addressed on {{steps.task.output.name}}: {{= coalesce(steps.push_backend.output.url, '') }} {{= coalesce(steps.push_frontend.output.url, '') }}"
