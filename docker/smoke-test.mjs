@@ -40,16 +40,21 @@ async function waitForServer() {
   throw new Error(`The server at ${baseUrl} did not become healthy`);
 }
 
-/** Runs a shell command as a workflow step and returns its output. `allow` is the workflow's network allow list. */
-async function runInSandbox(command, allow = []) {
+/**
+ * Runs a shell command as a workflow step and returns its output. `allow` is the
+ * workflow's network allow list, `runtimes` the language runtimes it asks for.
+ */
+async function runInSandbox(command, allow = [], runtimes = []) {
   const definition = {
     trigger: { type: 'manual', with: {} },
-    environment: { network: { allow } },
+    environment: { network: { allow }, runtimes },
     steps: [{ id: 'probe', type: 'shell', with: { command, continueOnError: true } }],
   };
   const workflow = await api('POST', '/workflows', { name: `smoke-${Date.now()}`, definition });
+  // Runtimes are downloaded before the first step. The gateway picks up a new allow list within a few seconds.
+  if (runtimes.length > 0) await new Promise((resolve) => setTimeout(resolve, 7000));
   const started = await api('POST', `/workflows/${workflow.id}/run`, {});
-  for (let attempt = 0; attempt < 120; attempt += 1) {
+  for (let attempt = 0; attempt < 360; attempt += 1) {
     const { run } = await api('GET', `/runs/${started.id}`);
     if (run.status === 'succeeded') return run.context.steps.probe.output.output;
     if (run.status === 'failed') throw new Error(`The probe run failed: ${run.error}`);
@@ -84,7 +89,11 @@ touch /tmp/.smoke && echo TMP_WRITABLE
 env | grep -qE 'AUTOWORKER_(TOKEN|SECRET_KEY|GATEWAY_SECRET)' && echo TOKEN_LEAKED
 cat /proc/[0-9]*/environ 2>/dev/null | grep -qaE 'AUTOWORKER_(TOKEN|SECRET_KEY|GATEWAY_SECRET)' && echo TOKEN_LEAKED
 pwd
+echo "path=$PATH"
 `;
+
+/** Where mise puts the runtimes a formula asks for. It has to come first on PATH. */
+const RUNTIME_SHIMS = '/home/agent/.local/share/mise/shims';
 
 const TOOLS = ['git', 'gh', 'node', 'npm', 'claude', 'mise', 'python3', 'jq', 'rg'];
 
@@ -105,7 +114,10 @@ check('the server secrets are not readable from the agent, directly or through /
 check('the agent home and /tmp are writable', probe.includes('HOME_WRITABLE') && probe.includes('TMP_WRITABLE'), probe);
 check('commands start in the run workspace', /^\/workspaces\//m.test(probe), probe);
 
-const shell = await runInWebShell('echo "shell-uid=$(id -u) shell-groups=$(id -G)"');
+check('workflow commands look for the formula runtimes first', line('path')?.startsWith(`${RUNTIME_SHIMS}:`), probe);
+
+const shell = await runInWebShell('echo "shell-uid=$(id -u) shell-groups=$(id -G) shell-path=$PATH"');
+check('the web shell looks for the formula runtimes first', shell.includes(`shell-path=${RUNTIME_SHIMS}:`), shell);
 check('the web shell runs as the agent user without extra groups', shell.includes(`shell-uid=${AGENT_UID} shell-groups=${AGENT_UID}`), shell);
 
 // ---- Network: the sandbox has no direct route out, and the gateway only lets allowed hosts through ----
@@ -143,6 +155,12 @@ check('the blocked connection shows up in the UI data', sandbox.recentlyBlocked.
 if (!process.env.SMOKE_SKIP_TOOLS) {
   const versions = await runInSandbox(TOOLS.map((tool) => `command -v ${tool} >/dev/null && echo "has-${tool}"`).join('\n'));
   for (const tool of TOOLS) check(`${tool} is installed`, versions.includes(`has-${tool}`), versions);
+}
+
+// The image ships Node.js 22. A workflow that asks for another version must get that one.
+if (!process.env.SMOKE_SKIP_TOOLS && !process.env.SMOKE_SKIP_INTERNET) {
+  const runtime = await runInSandbox('echo "node=$(node --version)"', ['*.jdx.dev', 'nodejs.org', 'github.com'], [{ name: 'node', version: '20' }]);
+  check('a workflow runs on the Node.js version its formula asks for', /^node=v20\./m.test(runtime), runtime);
 }
 
 console.log(failures.length === 0 ? '\nAll checks passed.' : `\n${failures.length} check(s) failed.`);

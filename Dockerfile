@@ -34,6 +34,8 @@ RUN apt-get update \
 
 # mise installs the language runtimes a formula asks for (into the agent's home volume).
 RUN curl -fsSL https://mise.run | MISE_VERSION=${MISE_VERSION} MISE_INSTALL_PATH=/usr/local/bin/mise sh
+# Keeps those runtimes first on PATH in login shells, which would otherwise reset it.
+COPY docker/profile.d/autoworker-path.sh /etc/profile.d/autoworker-path.sh
 
 # Claude Code, plus yarn and pnpm through corepack.
 RUN npm install --global @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \

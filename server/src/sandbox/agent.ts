@@ -40,9 +40,25 @@ export function agentShellCommand(): { file: string; args: string[] } {
   return { file: 'setpriv', args: ['--reuid', uid, '--regid', gid, '--clear-groups', '/bin/bash', '-l'] };
 }
 
+/**
+ * Name of the variable that carries the sandbox PATH into login shells.
+ * `/etc/profile` resets PATH there; `docker/profile.d/autoworker-path.sh` restores it from this.
+ */
+export const SANDBOX_PATH_VARIABLE = 'AUTOWORKER_SANDBOX_PATH';
+
+/**
+ * PATH of every sandbox process. The mise shims come first, so `node`,
+ * `python` and so on resolve to the version the workflow's formula asks for
+ * and only fall back to the tools in the image when the formula names none.
+ */
+function sandboxPath(): string {
+  const miseShims = path.join(config.agentHome, '.local/share/mise/shims');
+  return [miseShims, path.join(config.agentHome, '.local/bin'), process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'].join(':');
+}
+
 /** Environment without any workflow specifics. Used for housekeeping commands. */
 export function baseEnv(): Record<string, string> {
-  const miseShims = path.join(config.agentHome, '.local/share/mise/shims');
+  const sandboxPathValue = sandboxPath();
   return {
     ...proxyEnv([]),
     HOME: config.agentHome,
@@ -52,7 +68,8 @@ export function baseEnv(): Record<string, string> {
     TERM: 'xterm-256color',
     // The image is immutable; Claude Code must not try to update itself.
     DISABLE_AUTOUPDATER: '1',
-    PATH: [miseShims, path.join(config.agentHome, '.local/bin'), process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'].join(':'),
+    PATH: sandboxPathValue,
+    [SANDBOX_PATH_VARIABLE]: sandboxPathValue,
   };
 }
 

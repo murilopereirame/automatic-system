@@ -208,7 +208,42 @@ erDiagram
 | `/workspaces/<run id>` | agent | Working directory of a run, including the cloned repository |
 | `/home/agent/workflows/<workflow id>/claude` | agent | Claude config directory of a workflow: `CLAUDE.md`, memory, sessions |
 | `/home/agent/workflows/<workflow id>/mcp.json` | agent | MCP servers from the formula |
-| `/home/agent/.local/share/mise` | agent | Installed language runtimes |
+| `/home/agent/workflows/<workflow id>/mise.toml` | agent | The runtimes of the formula, rewritten at the start of every run |
+| `/home/agent/.local/share/mise` | agent | Installed language runtimes, shared by all workflows |
+
+## How a workflow gets its runtime versions
+
+The image ships Node.js 22. A formula can ask for something else under
+`environment.runtimes`, for example `{ name: node, version: "20" }`. Three
+parts make every process of that workflow use it:
+
+```mermaid
+flowchart TD
+    F["Formula: runtimes node 20"] -->|start of each run| M["workflows/&lt;id&gt;/mise.toml<br/>then <code>mise install</code>"]
+    M --> S["~/.local/share/mise/shims/node<br/>one shim, picks the version from<br/>MISE_GLOBAL_CONFIG_FILE"]
+    E["agent.ts builds the environment:<br/>PATH = shims first<br/>AUTOWORKER_SANDBOX_PATH = same value<br/>MISE_GLOBAL_CONFIG_FILE = that mise.toml"] --> D["Direct process<br/>Claude, git"]
+    E --> L["Login shell<br/>Run command block, web shell,<br/>shells Claude starts"]
+    L -->|"/etc/profile resets PATH"| P["/etc/profile.d/autoworker-path.sh<br/>PATH = AUTOWORKER_SANDBOX_PATH"]
+    D --> S
+    P --> S
+    S -->|formula names a version| N20["Node.js 20"]
+    S -->|formula names none| N22["Node.js 22 from the image"]
+```
+
+- **The shims come first on `PATH`.** `server/src/sandbox/agent.ts` is the one
+  place that builds the environment of sandbox processes.
+- **The shim reads the workflow's own `mise.toml`**, so two workflows can use
+  different versions at the same time. A changed version applies to the next
+  run. A run that is retried keeps the definition it started with.
+- **Login shells get the `PATH` back.** Debian's `/etc/profile` replaces `PATH`
+  with a fixed list, which would drop the shims and silently fall back to the
+  image's Node.js. [`docker/profile.d/autoworker-path.sh`](../docker/profile.d/autoworker-path.sh)
+  restores it from `AUTOWORKER_SANDBOX_PATH`. The smoke test checks this with
+  a real download of Node.js 20.
+
+Outside the container (`npm run dev`) that profile script is not installed, so
+"Run command" blocks and the web shell use whatever your own login shell puts
+on `PATH`.
 
 ## Secrets and who sees them
 

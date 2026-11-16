@@ -148,7 +148,7 @@ trigger:            # old form, still accepted
 
 | Key | Meaning |
 |-----|---------|
-| `runtimes` | Language runtimes, installed with [mise](https://mise.jdx.dev) before the first block runs. `name` and `version` as mise understands them |
+| `runtimes` | Language runtimes, installed with [mise](https://mise.jdx.dev) before the first block runs. `name` and `version` as mise understands them. Claude, commands and the web shell of the workflow then use that version instead of the one in the image, from the next run on ([how](ARCHITECTURE.md#how-a-workflow-gets-its-runtime-versions)) |
 | `mcpServers` | MCP servers for Claude, in the format of the `mcpServers` object of a `.mcp.json` file. Use `${NAME}` to refer to environment variables and exposed secrets |
 | `memory` | Files for Claude's config directory, usually `CLAUDE.md`. They are written when the workflow is saved or imported. An export contains the files as they are on disk at that moment, so what Claude has learned travels with the formula |
 | `skills` | Claude Code skills, each a `name` and the `content` of its `SKILL.md`. Written to `skills/<name>/SKILL.md` in the workflow's Claude config directory. Like memory, an export contains the skills as they are on disk |
