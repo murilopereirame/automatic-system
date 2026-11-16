@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { gitAuthEnv, parseRepo } from './git.js';
+import { ensureCommitAuthor, gitAuthEnv, parseRepo } from './git.js';
 import { text, workspacePath, type StepRuntime, type StepType } from './types.js';
 
 export const gitCloneStep: StepType = {
@@ -27,18 +27,21 @@ export const gitCloneStep: StepType = {
     },
     { key: 'tokenSecret', label: 'GitHub token secret', type: 'secret', default: 'GITHUB_TOKEN', help: 'Needed for private repositories.' },
   ],
-  async execute({ params, exec, run, context, log }) {
+  async execute(runtime) {
+    const { params, exec, run, context, log } = runtime;
     const repo = parseRepo(text(params, 'repo'));
     const folder = text(params, 'path', 'repo');
     const target = workspacePath(run.workspace, folder);
     if (target === run.workspace) throw new Error('Clone into a folder of the run workspace, not into the workspace itself');
     if (existsSync(target)) throw new Error(`The folder "${folder}" already exists in this run. Give each repository its own folder.`);
     const baseBranch = text(params, 'baseBranch');
-    const authEnv = gitAuthEnv(text(params, 'tokenSecret', 'GITHUB_TOKEN'));
+    const tokenSecret = text(params, 'tokenSecret', 'GITHUB_TOKEN');
+    const authEnv = gitAuthEnv(tokenSecret);
 
     const cloneArgs = ['clone', ...(baseBranch ? ['--branch', baseBranch] : []), repo.url, target];
     const clone = await exec('git', cloneArgs, { cwd: run.workspace, env: authEnv });
     if (clone.code !== 0) throw new Error(`Could not clone ${repo.owner}/${repo.name}`);
+    await ensureCommitAuthor(runtime, target, tokenSecret);
 
     const head = await exec('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: target, quiet: true });
     const existing = await findRemoteBranch(exec, target, text(params, 'reuseBranch'), log);

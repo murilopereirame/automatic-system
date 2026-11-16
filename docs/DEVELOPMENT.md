@@ -102,6 +102,6 @@ All routes under `/api` need the session cookie or `Authorization: Bearer <token
 | `GET /api/stream` | Server-sent events with live run updates |
 | `GET /api/approvals?status=pending`, `POST /api/approvals/:id/resolve` | Inbox |
 | `GET /api/secrets`, `PUT/DELETE /api/secrets/:name` | Secrets (names only on read) |
-| `GET/PUT /api/settings` | Git author identity |
+| `GET/PUT /api/settings` | Commit author of everything a run commits |
 | `WS /api/shell?runId=` | Web shell |
 | `POST /hooks/:workflowId/:triggerId` | Webhook triggers (authenticated by the trigger). Without `:triggerId` it calls the first trigger that takes webhooks |

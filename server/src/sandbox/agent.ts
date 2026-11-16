@@ -9,6 +9,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { config } from '../config.js';
+import { gitIdentityEnv } from '../git-identity.js';
 import { getSecret } from '../store/secrets.js';
 import type { Workflow } from '../types.js';
 
@@ -56,7 +57,7 @@ function sandboxPath(): string {
   return [miseShims, path.join(config.agentHome, '.local/bin'), process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'].join(':');
 }
 
-/** Environment without any workflow specifics. Used for housekeeping commands. */
+/** Environment without any workflow specifics. Used for housekeeping commands and the web shell outside a run. */
 export function baseEnv(): Record<string, string> {
   const sandboxPathValue = sandboxPath();
   return {
@@ -70,6 +71,8 @@ export function baseEnv(): Record<string, string> {
     DISABLE_AUTOUPDATER: '1',
     PATH: sandboxPathValue,
     [SANDBOX_PATH_VARIABLE]: sandboxPathValue,
+    // The commit author from Settings, so commits Claude makes are the user's.
+    ...gitIdentityEnv(),
   };
 }
 

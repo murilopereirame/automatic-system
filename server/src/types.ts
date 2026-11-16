@@ -231,7 +231,7 @@ export interface Approval {
 }
 
 export interface Settings {
-  /** Commit author used by the pull request block. Empty values fall back to the owner of the GitHub token. */
+  /** Commit author of everything a run commits. Empty values fall back to the owner of the GitHub token. */
   git: { name: string; email: string };
 }
 

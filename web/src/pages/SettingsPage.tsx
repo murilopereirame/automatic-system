@@ -79,7 +79,7 @@ function GitIdentity() {
   return (
     <form className="card" onSubmit={save}>
       <h2>Commit author</h2>
-      <p className="muted">Used by the pull request block when it commits. Leave empty to use the name and no-reply address of the GitHub token's owner.</p>
+      <p className="muted">Author of every commit made in a run: by Claude, by command blocks, by you in the web shell and by the pull request block. Leave empty to use the name and no-reply address of the GitHub token's owner.</p>
       <div className="field-pair">
         <label className="field">
           <span>Name</span>
