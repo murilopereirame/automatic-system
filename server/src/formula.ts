@@ -1,7 +1,7 @@
 /**
  * Formulas: the portable YAML form of a workflow.
  *
- * A formula contains the triggers, the blocks and the whole environment
+ * A formula contains the triggers, the inputs of a manual run, the blocks and the whole environment
  * (runtimes, MCP servers, Claude memory, environment variables, mounts) and
  * the notification webhooks.
  * Secret values are never part of a formula, only their names.
@@ -10,6 +10,7 @@ import YAML from 'yaml';
 import { errorMessage, HttpError } from './errors.js';
 import { checkExpression } from './expression.js';
 import { END_OF_RUN } from './steps/condition.js';
+import { parseInputs } from './inputs.js';
 import { getStepType } from './steps/index.js';
 import type { WorkflowInput } from './store/workflows.js';
 import { getTriggerType } from './triggers/index.js';
@@ -157,6 +158,7 @@ export function parseDefinition(input: unknown): WorkflowDefinition {
   const raw = asObject(input, 'the workflow');
   return {
     triggers: parseTriggers(raw),
+    inputs: parseInputs(raw.inputs),
     environment: parseEnvironment(raw.environment),
     notifications: parseNotifications(raw.notifications),
     steps: parseSteps(raw.steps),
@@ -187,12 +189,13 @@ export function parseFormula(source: string): WorkflowInput {
 
 /** Serialises a workflow as a formula. `snapshot` lets the caller pass memory and skills as they are on disk right now. */
 export function toFormula(workflow: Workflow, snapshot: { memory?: MemoryFile[]; skills?: SkillSpec[] } = {}): string {
-  const { triggers, environment, notifications, steps } = workflow.definition;
+  const { triggers, inputs = [], environment, notifications, steps } = workflow.definition;
   const document = {
     apiVersion: FORMULA_API_VERSION,
     kind: 'Formula',
     metadata: { name: workflow.name, description: workflow.description, enabled: workflow.enabled },
     triggers,
+    inputs,
     environment: { ...environment, memory: snapshot.memory ?? environment.memory, skills: snapshot.skills ?? environment.skills },
     notifications,
     steps,

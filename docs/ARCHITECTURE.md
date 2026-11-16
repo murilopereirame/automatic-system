@@ -55,6 +55,7 @@ flowchart TB
 | `server/src/types.ts` | Domain types shared by every module |
 | `server/src/db.ts`, `store/` | SQLite schema and one small module per table group |
 | `server/src/formula.ts` | Validation of workflow definitions, YAML import and export |
+| `server/src/inputs.ts` | Inputs of a manual run: checks the declarations and the values "Run now" sends |
 | `server/src/template.ts` | `{{ value }}` templating |
 | `server/src/expression.ts` | The expression language of conditions: parser and interpreter, no `eval`. See [EXPRESSIONS.md](EXPRESSIONS.md) |
 | `server/src/engine/engine.ts` | The run state machine |

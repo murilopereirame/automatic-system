@@ -2,6 +2,7 @@
 import type { FastifyInstance } from 'fastify';
 import { cancelRun, resolveApproval, retryRun, startRun } from '../engine/engine.js';
 import { HttpError } from '../errors.js';
+import { applyInputs } from '../inputs.js';
 import { parseDefinition, parseFormula, toFormula } from '../formula.js';
 import { config } from '../config.js';
 import { recentlyBlocked } from '../egress.js';
@@ -86,8 +87,11 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
   });
 
   app.post<IdParams>('/workflows/:id/run', async (request) => {
-    const payload = (request.body ?? {}) as Record<string, unknown>;
-    return startRun(workflowOr404(request.params.id), { source: 'manual', ...payload });
+    const workflow = workflowOr404(request.params.id);
+    const body = request.body ?? {};
+    if (typeof body !== 'object' || Array.isArray(body)) throw new HttpError(400, 'Send the payload of the run as a JSON object');
+    const payload = applyInputs(workflow.definition.inputs ?? [], body as Record<string, unknown>);
+    return startRun(workflow, { source: 'manual', ...payload });
   });
 
   /** Which of the things a workflow expects from the deployment are actually there. */

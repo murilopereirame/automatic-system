@@ -37,6 +37,9 @@ triggers:                    # what starts a run: any one of these
   - id: webhook
     type: webhook
 
+inputs:                      # what "Run now" asks for, optional
+  - { name: task.id, label: ClickUp task id, required: true }
+
 environment:                 # what the workflow needs around it
   runtimes: [{ name: node, version: "22" }]
   mcpServers: {}
@@ -90,8 +93,9 @@ the block directly above.
 ## Triggers
 
 A workflow has a list of triggers, and any of them starts a run. The list may
-be empty: **Run now** in the UI and `POST /api/workflows/:id/run` always work,
-with whatever you send as the payload.
+be empty: **Run now** in the UI and `POST /api/workflows/:id/run` always work.
+What a manual run sends as payload is described under
+[Inputs of a manual run](#inputs-of-a-manual-run).
 
 ```mermaid
 flowchart LR
@@ -144,6 +148,67 @@ trigger:            # old form, still accepted
   type: clickup
   with: { mode: poll }
 ```
+
+## Inputs of a manual run
+
+`inputs` lists the values **Run now** asks for before it starts a run. The
+answers are serialised as JSON and become the trigger payload, so blocks read
+them exactly like the payload of any other trigger. The `name` of an input is
+its place in that payload, and dots nest: `task.id` is read as
+`{{trigger.task.id}}`. This lets a manual run produce the same payload shape as
+the ClickUp or webhook trigger of the workflow.
+
+```yaml
+inputs:
+  - name: task.id
+    label: ClickUp task id
+    help: The id at the end of the task link.
+    required: true
+  - name: environment
+    type: select
+    options: [staging, production]
+    default: staging
+  - name: attempts
+    type: number
+    default: 2
+  - name: dryRun
+    type: boolean
+```
+
+Filled in with `86a8y386n`, `production` and a ticked box, the run starts with
+this trigger payload (`source` is added to every manual run):
+
+```json
+{ "source": "manual", "task": { "id": "86a8y386n" }, "environment": "production", "attempts": 2, "dryRun": true }
+```
+
+```mermaid
+flowchart LR
+    F[Run now form<br/>one field per input] -->|JSON payload| A[POST /api/workflows/:id/run]
+    C[Any API client] -->|JSON payload| A
+    A --> V{Check against inputs:<br/>types, defaults, required}
+    V -->|fits| R[Run<br/>trigger = payload]
+    V -->|does not fit| E[400 with the reason,<br/>no run]
+```
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `name` | required | Place in the trigger payload. Letters, digits and `_`, with dots for nesting. Two inputs may not overlap, such as `task` and `task.id` |
+| `type` | `text` | `text`, `textarea` (long text), `number`, `boolean`, `select` (one of `options`) or `json` (any JSON value, typed as JSON in the form) |
+| `label` | the name | Shown in the form |
+| `help` | none | Shown under the form field |
+| `default` | none | Used when the field is left empty |
+| `required` | `false` | The run does not start while the value is empty and there is no default |
+| `options` | none | The choices of a `select` input |
+
+The server checks the payload, not the form, so the same rules hold for
+`POST /api/workflows/:id/run` called from a script: send the JSON payload as
+the body. Values arrive with the type of their input (`"5"` becomes `5` for a
+number), and fields that are not declared inputs are passed through untouched.
+A workflow without `inputs` starts right away, with the body as its payload.
+
+Inputs only concern manual runs. Other triggers send their own payload and are
+not checked against them. Formulas without `inputs` import as before.
 
 ## Environment
 

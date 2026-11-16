@@ -94,7 +94,7 @@ All routes under `/api` need the session cookie or `Authorization: Bearer <token
 | `POST /api/login`, `POST /api/logout`, `GET /api/session` | Session |
 | `GET /api/meta` | Catalogue of block and trigger types with their fields |
 | `GET/POST /api/workflows`, `GET/PUT/DELETE /api/workflows/:id` | Workflows |
-| `POST /api/workflows/:id/run` | Start a run manually |
+| `POST /api/workflows/:id/run` | Start a run manually. The JSON body is the trigger payload, checked against the workflow's `inputs` |
 | `GET /api/workflows/:id/formula` | Export as formula |
 | `POST /api/formulas/import` | Import a formula (YAML body) |
 | `GET /api/runs`, `GET /api/runs/:id` | Runs, with events and approvals |

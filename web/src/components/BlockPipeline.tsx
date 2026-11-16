@@ -1,5 +1,5 @@
 /**
- * The block editor: the triggers on top, then the blocks in the order they
+ * The block editor: "Run now" and the triggers on top, then the blocks in the order they
  * run. Any trigger starts a run. Blocks can be added between any two blocks,
  * reordered by dragging or with the arrow buttons, and expanded to edit their
  * settings.
@@ -9,17 +9,21 @@
  * continues.
  */
 import { useState } from 'react';
-import type { BlockType, FieldSpec, Meta, StepConfig, TriggerConfig } from '../api.ts';
+import type { BlockType, FieldSpec, Meta, RunInput, StepConfig, TriggerConfig } from '../api.ts';
 import { FieldInput } from './FieldInput.tsx';
+import { RunInputsBlock } from './RunInputsBlock.tsx';
 
 interface Props {
   meta: Meta;
   triggers: TriggerConfig[];
+  /** What "Run now" asks for. */
+  inputs: RunInput[];
   steps: StepConfig[];
   secretNames: string[];
   /** What webhook URLs are built from. Missing until the workflow has been saved once. */
   hooks?: { workflowId: string; secret: string };
   onTriggersChange: (triggers: TriggerConfig[]) => void;
+  onInputsChange: (inputs: RunInput[]) => void;
   onStepsChange: (steps: StepConfig[]) => void;
 }
 
@@ -54,6 +58,9 @@ const RUN_ONLY_IF: FieldSpec = {
   help: "Optional. The block is skipped when this is false, e.g. steps.tests.output.passed or trigger.task.priority == 'urgent'. Use previous.output for the block above.",
 };
 
+/** `openId` of the "Run now" block. The colon keeps it apart from block ids, like the prefix of triggers. */
+const RUN_NOW_KEY = 'run-now:';
+
 /** Where a condition block continues for one outcome, in words. */
 function targetLabel(target: unknown, steps: StepConfig[]): string {
   if (!target) return 'next block';
@@ -62,7 +69,7 @@ function targetLabel(target: unknown, steps: StepConfig[]): string {
   return step?.name || String(target);
 }
 
-export function BlockPipeline({ meta, triggers, steps, secretNames, hooks, onTriggersChange, onStepsChange }: Props) {
+export function BlockPipeline({ meta, triggers, inputs, steps, secretNames, hooks, onTriggersChange, onInputsChange, onStepsChange }: Props) {
   const [openId, setOpenId] = useState<string>();
   const [draggedIndex, setDraggedIndex] = useState<number>();
 
@@ -92,14 +99,7 @@ export function BlockPipeline({ meta, triggers, steps, secretNames, hooks, onTri
 
   return (
     <div className="pipeline">
-      {triggers.length === 0 && (
-        <section className="block trigger-block">
-          <header>
-            <span className="block-kind">Trigger</span>
-            <span className="muted">None. Runs start only when you press "Run now".</span>
-          </header>
-        </section>
-      )}
+      <RunInputsBlock inputs={inputs} open={openId === RUN_NOW_KEY} onToggle={() => setOpenId(openId === RUN_NOW_KEY ? undefined : RUN_NOW_KEY)} onChange={onInputsChange} />
       {triggers.map((trigger, index) => {
         const type = meta.triggerTypes.find((candidate) => candidate.type === trigger.type);
         const url = hooks && hookUrl(trigger, hooks);
@@ -107,7 +107,7 @@ export function BlockPipeline({ meta, triggers, steps, secretNames, hooks, onTri
         return (
           <section key={trigger.id} className={`block trigger-block${open ? ' open' : ''}`}>
             <header onClick={() => setOpenId(open ? undefined : triggerKey(trigger))}>
-              <span className="block-kind">{index === 0 ? 'Trigger' : 'Or trigger'}</span>
+              <span className="block-kind">Or trigger</span>
               <span className="block-title">
                 <strong>{type?.title ?? `Unknown trigger type "${trigger.type}"`}</strong>
                 <span className="muted">

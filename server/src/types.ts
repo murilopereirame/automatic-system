@@ -31,6 +31,26 @@ export interface TriggerRef {
 /** What "Run now" and `POST /api/workflows/:id/run` record as the trigger of a run. */
 export const MANUAL_TRIGGER: TriggerRef = { id: 'manual', type: 'manual' };
 
+export type RunInputType = 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'json';
+
+/**
+ * A value "Run now" asks for before it starts a run. The answers are the
+ * trigger payload of the run (see inputs.ts).
+ */
+export interface RunInput {
+  /** Where the value goes in the trigger payload. Dots nest: `task.id` is read as `{{trigger.task.id}}`. */
+  name: string;
+  type: RunInputType;
+  /** Shown in the form instead of the name. */
+  label?: string;
+  help?: string;
+  /** Used when the form field is left empty. */
+  default?: unknown;
+  required?: boolean;
+  /** The choices of a `select` input. */
+  options?: string[];
+}
+
 export interface StepConfig {
   id: string;
   type: string;
@@ -119,6 +139,8 @@ export interface NotificationWebhook {
 export interface WorkflowDefinition {
   /** Any of these starts a run. Empty means runs only start from "Run now". */
   triggers: TriggerConfig[];
+  /** What "Run now" asks for. Missing on workflows stored before inputs existed. */
+  inputs?: RunInput[];
   environment: Environment;
   notifications: NotificationWebhook[];
   steps: StepConfig[];

@@ -30,7 +30,9 @@ flowchart LR
 
 ![Block editor](images/editor.png)
 
-- **Blocks**: the triggers on top, then the blocks in the order they run. Any
+- **Blocks**: the **Run now** block and the triggers on top, then the blocks in
+  the order they run. Open the **Run now** block to add inputs: values a manual
+  run asks for, see [Run now with inputs](#run-now-with-inputs). Any
   trigger starts a run. **+ Add trigger** adds one, also a second of the same
   type; click a trigger to edit its settings. Triggers that are called from
   outside show their own URL. Without triggers, runs start only from **Run now**.
@@ -45,6 +47,17 @@ flowchart LR
   blocks update. This is the same text **Export formula** downloads.
 
 ![Environment tab](images/environment.png)
+
+## Run now with inputs
+
+![Run now form](images/run-now-inputs.png)
+
+**Run now**, on the workflow list and in the editor, starts a workflow by
+hand. When the workflow declares inputs, a form asks for them first. Fields
+marked `*` are required. **Trigger payload** shows the JSON the run will start
+with, which is what blocks read as `{{trigger...}}`. The run page lists the
+same payload under **Triggered**. Inputs are described in
+[FORMULA.md](FORMULA.md#inputs-of-a-manual-run).
 
 ## Run page
 
