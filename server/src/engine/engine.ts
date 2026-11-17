@@ -15,6 +15,9 @@
  * Steps normally run in list order. Conditions change that in two ways: a
  * step whose `if` is false is skipped, and a condition block can name the
  * step the run continues with (see `jump`).
+ *
+ * A run keeps its own copy of the workflow definition. `applyDefinition`
+ * switches that copy to a newer one (see apply-definition.ts).
  */
 import { config } from '../config.js';
 import { errorMessage } from '../errors.js';
@@ -26,14 +29,20 @@ import { getWorkflow } from '../store/workflows.js';
 import { evaluate, truthy } from '../expression.js';
 import { END_OF_RUN } from '../steps/condition.js';
 import { getStepType } from '../steps/index.js';
+import { planApply, type ApplyPlan } from './apply-definition.js';
 import { text, type StepRuntime } from '../steps/types.js';
 import { renderDeep } from '../template.js';
-import { MANUAL_TRIGGER, type Run, type SCOPE_NAMES, type StepConfig, type TriggerRef, type Workflow } from '../types.js';
+import { MANUAL_TRIGGER, type Run, type SCOPE_NAMES, type StepConfig, type TriggerRef, type Workflow, type WorkflowDefinition } from '../types.js';
 
-/** A run that is executing right now: how to stop its current step, and whether that stop is a "skip this block". */
+/**
+ * A run that is executing right now: how to stop its current step, whether
+ * that stop is a "skip this block", and a definition to switch to as soon as
+ * the current step is done (a step is never changed while it runs).
+ */
 interface ActiveRun {
   controller: AbortController;
   skipRequested: boolean;
+  pendingDefinition?: WorkflowDefinition;
 }
 
 const activeRuns = new Map<string, ActiveRun>();
@@ -60,16 +69,23 @@ export async function executeRun(runId: string): Promise<void> {
   run.error = undefined;
   runs.saveRun(run);
 
+  const prepare = (workflow: Workflow) => prepareEnvironment(workflow, (chunk) => runs.addEvent(run.id, null, 'output', { text: chunk }), controller.signal);
   try {
-    const workflow = workflowForRun(run);
+    let workflow = workflowForRun(run);
     await agentMkdir(run.workspace);
-    await prepareEnvironment(workflow, (chunk) => runs.addEvent(run.id, null, 'output', { text: chunk }), controller.signal);
+    await prepare(workflow);
 
     while (run.stepIndex < run.definition.steps.length) {
       const step = run.definition.steps[run.stepIndex];
       const next = await executeStep(run, workflow, step, controller.signal);
       if (next === 'paused') return;
       run.stepIndex = next;
+      if (active.pendingDefinition) {
+        const plan = switchDefinition(run, active.pendingDefinition);
+        active.pendingDefinition = undefined;
+        workflow = workflowForRun(run);
+        if (plan.sections.includes('environment')) await prepare(workflow);
+      }
       runs.saveRun(run);
     }
     finish(run, 'succeeded');
@@ -85,6 +101,8 @@ export async function executeRun(runId: string): Promise<void> {
   } finally {
     activeRuns.delete(runId);
   }
+  // The run stopped (waiting, failed, cancelled) before it could switch to a newer definition: switch now.
+  if (active.pendingDefinition) applyToStoppedRun(run, active.pendingDefinition);
   // The step that was running has been stopped and passed over: carry on with the next one.
   if (active.skipRequested) await executeRun(runId);
 }
@@ -292,6 +310,53 @@ function skipCurrentStep(run: Run): void {
   skip(run, run.definition.steps[run.stepIndex], SKIPPED_BY_HAND);
   run.stepIndex += 1;
   runs.saveRun(run);
+}
+
+/**
+ * Switches a run to another definition of its workflow, usually the latest one
+ * after it was edited. Finished blocks keep their results; the block the run
+ * is at and the blocks after it come from `definition` (see apply-definition.ts).
+ *  - running: the step that runs now finishes as it is, the switch happens right after it
+ *  - waiting, failed, cancelled: the switch happens now; a failed run then continues on Retry
+ *  - waiting at a block that `definition` removed: its approval is dismissed and the run continues
+ * Returns the plan, and whether the switch still has to wait for the running step.
+ */
+export function applyDefinition(runId: string, definition: WorkflowDefinition): { plan: ApplyPlan; deferred: boolean } {
+  const run = runs.getRun(runId);
+  if (!run) throw new Error('Run not found');
+  if (run.status === 'succeeded') throw new Error('This run has finished. Start a new run to use the latest workflow.');
+
+  const plan = planApply(run.definition, definition, run.stepIndex);
+  if (plan.upToDate) return { plan, deferred: false };
+
+  const active = activeRuns.get(runId);
+  if (active) {
+    active.pendingDefinition = definition;
+    runs.addEvent(run.id, null, 'definition_queued', { reason: 'The workflow changes apply once the current block is done.' });
+    return { plan, deferred: true };
+  }
+  applyToStoppedRun(run, definition);
+  return { plan, deferred: false };
+}
+
+/** Switches a run that is not executing. A run waiting at a removed block has nothing left to wait for, so it continues. */
+function applyToStoppedRun(run: Run, definition: WorkflowDefinition): void {
+  const plan = switchDefinition(run, definition);
+  runs.saveRun(run);
+  if (run.status === 'waiting' && plan.currentRemoved) {
+    runs.dismissPendingApprovals(run.id);
+    void executeRun(run.id);
+  }
+}
+
+/** Replaces the run's definition in memory and moves its position to the matching block. The caller saves the run. */
+function switchDefinition(run: Run, definition: WorkflowDefinition): ApplyPlan {
+  const plan = planApply(run.definition, definition, run.stepIndex);
+  // Versioning: this is the one place, besides runs.createRun, where a run's definition is set.
+  run.definition = definition;
+  run.stepIndex = plan.continueIndex;
+  runs.addEvent(run.id, null, 'definition_applied', { blocks: plan.blocks, sections: plan.sections, continueAt: plan.continueAt });
+  return plan;
 }
 
 /** Called once at startup: runs that were executing when the server stopped cannot continue on their own. */
