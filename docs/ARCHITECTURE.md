@@ -60,6 +60,7 @@ flowchart TB
 | `server/src/template.ts` | `{{ value }}` templating |
 | `server/src/expression.ts` | The expression language of conditions: parser and interpreter, no `eval`. See [EXPRESSIONS.md](EXPRESSIONS.md) |
 | `server/src/engine/engine.ts` | The run state machine |
+| `server/src/engine/apply-definition.ts` | What switching a run to an edited workflow changes, and where it continues |
 | `server/src/steps/` | One file per block type, registered in `steps/index.ts` |
 | `server/src/triggers/` | One file per trigger type, plus the manager in `triggers/index.ts` |
 | `server/src/sandbox/` | Running processes as the agent user, preparing runtimes, memory and MCP config |
@@ -131,7 +132,55 @@ the same operation: continue from `stepIndex`. A retry also sets the
 failed because it had gone back too often can go back again.
 
 A run keeps a copy of the workflow definition it started with, so editing a
-workflow never changes runs that are in flight.
+workflow never changes runs that are in flight, unless you apply the edits to
+them (next section).
+
+### Applying workflow edits to existing runs
+
+After a workflow is saved, a run that has not succeeded can switch to the new
+definition: **Apply latest workflow** on the run page, or **Apply to them** in
+the editor right after saving, for every open run at once. The rules live in
+`server/src/engine/apply-definition.ts` (a pure function, so the UI can show
+the plan before anything changes) and `applyDefinition` in the engine.
+
+- Blocks are matched by **id**.
+- Blocks the run already passed **keep their results** and do not run again,
+  even if they were changed. A block added before the run's position does not
+  run in this run.
+- The block the run is at, and every block after it, **come from the new
+  definition**. If the block the run is at was removed, the run continues with
+  the next block that still exists.
+- Environment, notifications and the other sections apply too. A changed
+  environment is prepared again before the next block.
+
+What happens depends on the state of the run:
+
+```mermaid
+flowchart TD
+    A([Apply latest workflow]) --> S{run status}
+    S -- succeeded --> X[refused: start a new run]
+    S -- running --> Q["remember the new definition<br/>the running block finishes as it was"] --> W[switch right after that block] --> C([run continues with the new blocks])
+    S -- "failed or cancelled" --> F[switch now] --> R([Retry continues from the mapped block])
+    S -- waiting --> G[switch now] --> GR{was the block it waits at removed?}
+    GR -- no --> GW([keeps waiting; after the answer it goes on with the new blocks])
+    GR -- yes --> GD[dismiss the approval] --> C
+```
+
+Where the run continues (`mapPosition`):
+
+```mermaid
+flowchart LR
+    P[block the run is at] --> E1{still exists?}
+    E1 -- yes --> U1[continue there]
+    E1 -- no --> E2{a later block still exists?}
+    E2 -- yes --> U2[continue at the first one]
+    E2 -- no --> U3["continue right after the last earlier block that exists<br/>(so blocks added at the end still run)"]
+```
+
+Every switch is recorded in the run's log as `definition_applied`, with the
+blocks that changed and where the run continues. Retrying or skipping does not
+switch a run on its own: a run keeps its definition until someone applies a
+newer one.
 
 ### Skipping a block by hand
 
@@ -269,7 +318,8 @@ flowchart TD
   place that builds the environment of sandbox processes.
 - **The shim reads the workflow's own `mise.toml`**, so two workflows can use
   different versions at the same time. A changed version applies to the next
-  run. A run that is retried keeps the definition it started with.
+  run. A run that is retried keeps the definition it started with, unless the
+  newer workflow is applied to it.
 - **Login shells get the `PATH` back.** Debian's `/etc/profile` replaces `PATH`
   with a fixed list, which would drop the shims and silently fall back to the
   image's Node.js. [`docker/profile.d/autoworker-path.sh`](../docker/profile.d/autoworker-path.sh)

@@ -100,6 +100,8 @@ All routes under `/api` need the session cookie or `Authorization: Bearer <token
 | `POST /api/formulas/import` | Import a formula (YAML body) |
 | `GET /api/runs`, `GET /api/runs/:id` | Runs, with events and approvals |
 | `POST /api/runs/:id/cancel`, `POST /api/runs/:id/retry`, `POST /api/runs/:id/skip` | Control a run: stop it, continue from the block it stopped at, or pass over that block |
+| `GET /api/runs/:id/apply-latest`, `POST /api/runs/:id/apply-latest` | Preview, or apply, switching a run to the saved workflow. `GET /api/runs/:id` says `outdated: true` when there is something to apply |
+| `GET /api/workflows/:id/outdated-runs`, `POST /api/workflows/:id/apply-to-runs` | Open runs still on an older definition, and applying the saved one to all of them |
 | `GET /api/stream` | Server-sent events with live run updates |
 | `GET /api/approvals?status=pending`, `POST /api/approvals/:id/resolve` | Inbox |
 | `GET /api/secrets`, `PUT/DELETE /api/secrets/:name` | Secrets (names only on read) |

@@ -225,7 +225,7 @@ export interface Run {
   status: RunStatus;
   /** Index of the step that is running, waiting, or that failed. */
   stepIndex: number;
-  /** Copy of the workflow definition taken when the run started, so later edits do not affect it. */
+  /** Copy of the workflow definition taken when the run started, so later edits do not affect it unless they are applied to the run (see engine/apply-definition.ts). */
   definition: WorkflowDefinition;
   /** The workflow version `definition` was taken from. Missing on runs from before workflows had versions. */
   workflowVersion?: number;

@@ -61,6 +61,11 @@ run that is already going. It also records the version number
 History tab counts how many runs each version had. Runs from before versions
 existed have no version.
 
+When you apply workflow edits to a run that already started (the
+*Apply latest* banner on the run page, see [ARCHITECTURE.md](ARCHITECTURE.md)),
+the run switches to the current version and records it. Its log shows the
+switch, e.g. *Workflow edits applied (v2 → v3)*.
+
 ## Comparing versions
 
 The History tab shows a version against the one before it, or against any

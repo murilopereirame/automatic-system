@@ -29,6 +29,7 @@ flowchart LR
 - **Versions with rollback.** Every save is a version. Compare any two, restore an old one (as a new version, so nothing is lost), and carry the history inside the formula.
 - **Triggers.** ClickUp task assigned to you (poll or webhook) and generic webhook. A workflow can have several, and "Run now" always works.
 - **Human in the loop.** Approval blocks pause a run. Reject with a comment and Claude reworks it.
+- **Edit while it runs.** Apply a saved workflow to runs that already started: finished blocks keep their results, the rest use the new blocks.
 - **Full visibility.** Every run has a live log: trigger, Claude messages and tool calls, commands, test results, notifications, approvals.
 - **A shell next to Claude.** Open a terminal in the run's workspace, as the same user Claude runs as.
 - **Sandboxed.** Claude runs as an unprivileged user in a hardened container, only sees the secrets a workflow exposes to it, and can only connect to hosts on the workflow's allow list.

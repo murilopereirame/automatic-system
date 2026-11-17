@@ -74,12 +74,13 @@ export function listRunsByStatus(status: RunStatus): Run[] {
   return (db.prepare('SELECT * FROM runs WHERE status = ?').all(status) as unknown as RunRow[]).map(runFromRow);
 }
 
-/** Saves the mutable parts of a run and tells listeners about it. */
+/** Saves the mutable parts of a run and tells listeners about it. The definition changes only when newer workflow edits are applied to the run. */
 export function saveRun(run: Run): void {
   run.updatedAt = now();
-  db.prepare('UPDATE runs SET status = ?, step_index = ?, workflow_version = ?, context = ?, error = ?, updated_at = ? WHERE id = ?').run(
+  db.prepare('UPDATE runs SET status = ?, step_index = ?, definition = ?, workflow_version = ?, context = ?, error = ?, updated_at = ? WHERE id = ?').run(
     run.status,
     run.stepIndex,
+    JSON.stringify(run.definition),
     run.workflowVersion ?? null,
     JSON.stringify(run.context),
     run.error ?? null,

@@ -52,6 +52,8 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
   const [notice, setNotice] = useState<string>();
   /** Optional description of the change, kept with the version the next save creates. */
   const [changeNote, setChangeNote] = useState('');
+  /** Open runs that still use the definition from before the last save. */
+  const [outdatedRuns, setOutdatedRuns] = useState(0);
 
   useEffect(() => {
     if (!workflowId) return;
@@ -75,12 +77,20 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
       setError(undefined);
       setNotice(`Saved as version ${workflow.version}`);
       requirements.reload();
+      if (workflowId) api.outdatedRuns(workflow.id).then((found) => setOutdatedRuns(found.length), () => setOutdatedRuns(0));
       if (!workflowId) navigate(`/workflows/${workflow.id}`);
       return workflow;
     } catch (reason) {
       fail(reason as Error);
     }
   };
+
+  const applyToRuns = () =>
+    saved &&
+    api.applyToRuns(saved.id).then((applied) => {
+      setOutdatedRuns(0);
+      setNotice(`Saved and applied to ${applied.length} run${applied.length === 1 ? '' : 's'}`);
+    }, fail);
 
   const { runNow, dialog } = useRunNow(fail);
   const saveAndRun = async () => {
@@ -135,6 +145,22 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
         </button>
       </PageHeader>
       <ErrorNote message={error} />
+      {outdatedRuns > 0 && !dirty && (
+        <section className="card apply-latest">
+          <header>
+            <strong>
+              {outdatedRuns} open run{outdatedRuns === 1 ? '' : 's'} still use{outdatedRuns === 1 ? 's' : ''} the workflow from before this save
+            </strong>
+            <div className="actions">
+              <button className="primary" onClick={applyToRuns} title="Blocks those runs already finished keep their results; the rest use the saved workflow">
+                Apply to {outdatedRuns === 1 ? 'it' : 'them'}
+              </button>
+              <button onClick={() => setOutdatedRuns(0)}>Keep as they are</button>
+            </div>
+          </header>
+          <p className="muted">Blocks those runs already finished keep their results. A block that is running right now finishes as it is. You can also apply the changes to one run from its page.</p>
+        </section>
+      )}
 
       <section className="card workflow-basics">
         <label className="field">

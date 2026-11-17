@@ -1,6 +1,7 @@
 /** One run: its blocks with their state, the live event log, pending approvals and the web shell. */
 import { useEffect, useRef, useState } from 'react';
 import { api, type Run, type RunDetail, type RunStatus, type StepConfig } from '../api.ts';
+import { ApplyLatestCard } from '../components/ApplyLatestCard.tsx';
 import { ApprovalCard } from '../components/ApprovalCard.tsx';
 import { ErrorNote, PageHeader, StatusBadge, TimeAgo } from '../components/common.tsx';
 import { EventLog } from '../components/EventLog.tsx';
@@ -62,7 +63,7 @@ export function RunPage({ runId }: { runId: string }) {
   }, [eventCount]);
 
   if (!detail) return <ErrorNote message={error} />;
-  const { run, events, approvals } = detail;
+  const { run, events, approvals, outdated } = detail;
   const act = (action: Promise<unknown>) => action.then(reload, (reason: Error) => setError(reason.message));
   const pending = approvals.filter((approval) => approval.status === 'pending');
   const shownEvents = selectedStep ? events.filter((event) => event.stepId === selectedStep) : events;
@@ -115,6 +116,7 @@ export function RunPage({ runId }: { runId: string }) {
         {run.context.repo && ` · ${run.context.repo.owner}/${run.context.repo.name} on ${run.context.repo.branch}`}
       </p>
       <ErrorNote message={error ?? (run.status === 'failed' ? run.error : undefined)} />
+      {outdated && <ApplyLatestCard run={run} onApplied={reload} />}
 
       {pending.map((approval) => {
         const step = stepOf(approval.stepId);

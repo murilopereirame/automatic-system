@@ -53,6 +53,16 @@ flowchart LR
 
 ![Environment tab](images/environment.png)
 
+### Applying a save to open runs
+
+When you save a workflow that has open runs (running, waiting, failed or
+cancelled) on the previous version, the editor offers **Apply to them**. It
+switches all of them to what you just saved, with the same rules as on the run
+page. **Keep as they are** leaves them alone; you can still apply the edits to
+one run from its page later.
+
+![The editor offers to apply a save to open runs](images/apply-latest-editor.png)
+
 ## Run now with inputs
 
 ![Run now form](images/run-now-inputs.png)
@@ -78,6 +88,15 @@ same payload under **Triggered**. Inputs are described in
   the next one. Use it when a block is stuck or not needed this time. It is
   there while the block runs (what it is doing is stopped), waits for you, or
   has failed. The block is marked **Skipped** and has no output.
+- **This workflow was edited after this run started** appears when the
+  workflow was saved with changes after the run took its copy, and the run
+  has not succeeded. **Review changes** lists each block that differs and
+  whether this run will notice: finished blocks keep their results, the block
+  the run is at and the ones after it use the new settings. **Apply latest
+  workflow** switches the run. A block that is running right now finishes as
+  it is first; a failed run picks the changes up when you retry it.
+
+  ![Applying the latest workflow to a waiting run](images/apply-latest-run.png)
 - **Retry from failed block** runs the failed block again. A condition block
   that had gone back too often gets its full number of repeats again.
 - **Open shell** starts a terminal in the run's workspace, as the same user
@@ -97,6 +116,7 @@ same payload under **Triggered**. Inputs are described in
 | `web/src/components/FieldInput.tsx` | Renders one setting from its field description |
 | `web/src/components/EventLog.tsx` | Renders run events by type |
 | `web/src/components/Terminal.tsx` | xterm.js terminal for the web shell |
+| `web/src/components/ApplyLatestCard.tsx` | Run page card that previews and applies workflow edits to the run |
 
 The forms of blocks and triggers are generated from the catalogue the server
 returns at `GET /api/meta`. Adding a block type on the server needs no UI
