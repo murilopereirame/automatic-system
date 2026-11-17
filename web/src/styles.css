@@ -680,6 +680,58 @@ pre.code {
   margin-bottom: 12px;
 }
 
+/* ---- Applying workflow edits to runs ----------------------------------- */
+
+.apply-latest {
+  border-left: 4px solid var(--running);
+  margin-bottom: 12px;
+}
+
+.apply-latest header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.apply-changes {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  display: grid;
+  gap: 6px;
+}
+
+.apply-behind {
+  color: var(--muted);
+}
+
+.apply-kind {
+  display: inline-block;
+  min-width: 64px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: center;
+  background: var(--surface-2);
+}
+
+.apply-kind-added {
+  background: var(--good-bg);
+  color: var(--good);
+}
+
+.apply-kind-removed {
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+
+.apply-kind-changed {
+  background: var(--running-bg);
+  color: var(--running);
+}
+
 /* ---- Run page ---------------------------------------------------------- */
 
 .run-layout {

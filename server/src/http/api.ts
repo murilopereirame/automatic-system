@@ -1,6 +1,7 @@
 /** JSON API used by the web UI. Every route here requires authentication. */
 import type { FastifyInstance } from 'fastify';
-import { cancelRun, resolveApproval, retryRun, skipStep, startRun } from '../engine/engine.js';
+import { planApply } from '../engine/apply-definition.js';
+import { applyDefinition, cancelRun, resolveApproval, retryRun, skipStep, startRun } from '../engine/engine.js';
 import { HttpError } from '../errors.js';
 import { applyInputs } from '../inputs.js';
 import { parseDefinition, parseFormula, toFormula } from '../formula.js';
@@ -13,7 +14,7 @@ import { getSettings, saveSettings } from '../store/settings.js';
 import * as workflows from '../store/workflows.js';
 import { stepTypes } from '../steps/index.js';
 import { syncTriggers, triggerTypes } from '../triggers/index.js';
-import type { RunEvent, Settings, Workflow } from '../types.js';
+import type { Run, RunEvent, Settings, Workflow } from '../types.js';
 import { requireAuth } from './auth.js';
 
 type IdParams = { Params: { id: string } };
@@ -50,6 +51,34 @@ export async function importFormula(source: string): Promise<Workflow> {
   const workflow = existing ? workflows.updateWorkflow(existing.id, input)! : workflows.createWorkflow(input);
   await afterWorkflowChange(workflow);
   return workflow;
+}
+
+function runOr404(id: string): Run {
+  const run = runs.getRun(id);
+  if (!run) throw new HttpError(404, 'Run not found');
+  return run;
+}
+
+/** Runs that can still pick up workflow edits: every run that has not succeeded. */
+const OPEN_STATUSES = new Set<Run['status']>(['queued', 'running', 'waiting', 'failed', 'cancelled']);
+
+/** True when the workflow was edited since the run took (or last applied) its copy of the definition. */
+function isOutdated(run: Run, workflow: Workflow | undefined): boolean {
+  return workflow !== undefined && JSON.stringify(run.definition) !== JSON.stringify(workflow.definition);
+}
+
+/** Open runs of a workflow that use an older definition than the saved one. */
+function outdatedRuns(workflow: Workflow): Run[] {
+  return runs.listRuns({ workflowId: workflow.id, limit: 1000 }).filter((run) => OPEN_STATUSES.has(run.status) && isOutdated(run, workflow));
+}
+
+/** Runs `action`, turning the engine's "not possible right now" errors into 409 answers. */
+function conflictOnError<T>(action: () => T): T {
+  try {
+    return action();
+  } catch (error) {
+    throw new HttpError(409, (error as Error).message);
+  }
 }
 
 export async function registerApi(app: FastifyInstance): Promise<void> {
@@ -94,6 +123,17 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
     return startRun(workflow, { source: 'manual', ...payload });
   });
 
+  /** Open runs that still use an older definition of this workflow, for the "apply to runs" prompt of the editor. */
+  app.get<IdParams>('/workflows/:id/outdated-runs', async (request) =>
+    outdatedRuns(workflowOr404(request.params.id)).map(({ id, status, createdAt }) => ({ id, status, createdAt })),
+  );
+
+  /** Applies the saved definition to every open run that uses an older one. */
+  app.post<IdParams>('/workflows/:id/apply-to-runs', async (request) => {
+    const workflow = workflowOr404(request.params.id);
+    return outdatedRuns(workflow).map((run) => ({ runId: run.id, deferred: applyDefinition(run.id, workflow.definition).deferred }));
+  });
+
   /** Which of the things a workflow expects from the deployment are actually there. */
   app.get<IdParams>('/workflows/:id/requirements', async (request) => {
     const { mounts, services } = workflowOr404(request.params.id).definition.environment;
@@ -128,9 +168,25 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: { workflowId?: string } }>('/runs', async (request) => runs.listRuns({ workflowId: request.query.workflowId }));
 
   app.get<IdParams>('/runs/:id', async (request) => {
-    const run = runs.getRun(request.params.id);
-    if (!run) throw new HttpError(404, 'Run not found');
-    return { run, events: runs.listEvents(run.id), approvals: runs.listApprovals({ runId: run.id }) };
+    const run = runOr404(request.params.id);
+    const outdated = OPEN_STATUSES.has(run.status) && isOutdated(run, workflows.getWorkflow(run.workflowId));
+    return { run, events: runs.listEvents(run.id), approvals: runs.listApprovals({ runId: run.id }), outdated };
+  });
+
+  /** What applying the saved workflow to this run would change, without changing anything. */
+  app.get<IdParams>('/runs/:id/apply-latest', async (request) => {
+    const run = runOr404(request.params.id);
+    const workflow = workflows.getWorkflow(run.workflowId);
+    if (!workflow) throw new HttpError(409, 'The workflow of this run was deleted');
+    return planApply(run.definition, workflow.definition, run.stepIndex);
+  });
+
+  /** Switches the run to the saved workflow definition. Finished blocks keep their results. */
+  app.post<IdParams>('/runs/:id/apply-latest', async (request) => {
+    const run = runOr404(request.params.id);
+    const workflow = workflows.getWorkflow(run.workflowId);
+    if (!workflow) throw new HttpError(409, 'The workflow of this run was deleted');
+    return conflictOnError(() => applyDefinition(run.id, workflow.definition));
   });
 
   app.post<IdParams>('/runs/:id/cancel', async (request) => {

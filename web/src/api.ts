@@ -44,7 +44,12 @@ export interface RunDetail {
   run: Run;
   events: RunEvent[];
   approvals: Approval[];
+  /** The workflow was edited after this run took its copy of the definition. */
+  outdated: boolean;
 }
+
+export type { ApplyPlan, BlockChange } from '../../server/src/engine/apply-definition.ts';
+import type { ApplyPlan } from '../../server/src/engine/apply-definition.ts';
 
 /** Raised for any non-2xx answer, with the server's error message. */
 export class ApiError extends Error {
@@ -99,6 +104,10 @@ export const api = {
   cancelRun: (id: string) => request('POST', `/runs/${id}/cancel`, {}),
   retryRun: (id: string) => request('POST', `/runs/${id}/retry`, {}),
   skipStep: (id: string) => request('POST', `/runs/${id}/skip`, {}),
+  applyLatestPlan: (id: string) => request<ApplyPlan>('GET', `/runs/${id}/apply-latest`),
+  applyLatest: (id: string) => request<{ plan: ApplyPlan; deferred: boolean }>('POST', `/runs/${id}/apply-latest`, {}),
+  outdatedRuns: (workflowId: string) => request<Pick<Run, 'id' | 'status' | 'createdAt'>[]>('GET', `/workflows/${workflowId}/outdated-runs`),
+  applyToRuns: (workflowId: string) => request<{ runId: string; deferred: boolean }[]>('POST', `/workflows/${workflowId}/apply-to-runs`, {}),
 
   pendingApprovals: () => request<PendingApproval[]>('GET', '/approvals?status=pending'),
   resolveApproval: (id: string, decision: 'approved' | 'rejected', comment: string) =>
