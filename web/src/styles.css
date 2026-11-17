@@ -860,6 +860,20 @@ pre.code {
   gap: 12px;
   padding: 6px 0;
   border-top: 1px solid var(--surface-2);
+  /* Entries scrolled out of view are not laid out or painted, which keeps long logs cheap. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 40px;
+}
+
+.event-body .show-all {
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.log-older {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 10px;
 }
 
 @media (max-width: 760px) {

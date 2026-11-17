@@ -62,6 +62,10 @@ function runOr404(id: string): Run {
 /** Runs that can still pick up workflow edits: every run that has not succeeded. */
 const OPEN_STATUSES = new Set<Run['status']>(['queued', 'running', 'waiting', 'failed', 'cancelled']);
 
+/** Events per page of a run's log. Small enough to render at once, large enough that most runs fit in one. */
+const EVENT_PAGE_SIZE = 300;
+const MAX_EVENT_PAGE_SIZE = 1000;
+
 /** True when the workflow was edited since the run took (or last applied) its copy of the definition. */
 function isOutdated(run: Run, workflow: Workflow | undefined): boolean {
   return workflow !== undefined && JSON.stringify(run.definition) !== JSON.stringify(workflow.definition);
@@ -170,7 +174,18 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
   app.get<IdParams>('/runs/:id', async (request) => {
     const run = runOr404(request.params.id);
     const outdated = OPEN_STATUSES.has(run.status) && isOutdated(run, workflows.getWorkflow(run.workflowId));
-    return { run, events: runs.listEvents(run.id), approvals: runs.listApprovals({ runId: run.id }), outdated };
+    return { run, approvals: runs.listApprovals({ runId: run.id }), outdated };
+  });
+
+  /**
+   * The run's log, newest page first: `?before=<event id>` pages back, `?stepId=` keeps one block's events.
+   * Kept apart from the run so the page can refresh the run's state without downloading the whole log again.
+   */
+  app.get<IdParams & { Querystring: { before?: string; stepId?: string; limit?: string } }>('/runs/:id/events', async (request) => {
+    const run = runOr404(request.params.id);
+    const limit = Math.min(Math.max(Number(request.query.limit) || EVENT_PAGE_SIZE, 1), MAX_EVENT_PAGE_SIZE);
+    const before = Number(request.query.before) || undefined;
+    return runs.listEventPage(run.id, { before, stepId: request.query.stepId || undefined, limit });
   });
 
   /** What applying the saved workflow to this run would change, without changing anything. */

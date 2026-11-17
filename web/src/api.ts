@@ -40,9 +40,13 @@ export interface SandboxStatus {
   recentlyBlocked: { host: string; at: string }[];
 }
 
+export interface RunEventPage {
+  events: RunEvent[];
+  hasOlder: boolean;
+}
+
 export interface RunDetail {
   run: Run;
-  events: RunEvent[];
   approvals: Approval[];
   /** The workflow was edited after this run took its copy of the definition. */
   outdated: boolean;
@@ -101,6 +105,13 @@ export const api = {
 
   runs: (workflowId?: string) => request<Run[]>('GET', `/runs${workflowId ? `?workflowId=${workflowId}` : ''}`),
   run: (id: string) => request<RunDetail>('GET', `/runs/${id}`),
+  /** One page of a run's log, newest first. See server `listEventPage`. */
+  runEvents: (id: string, options: { before?: number; stepId?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (options.before) query.set('before', String(options.before));
+    if (options.stepId) query.set('stepId', options.stepId);
+    return request<RunEventPage>('GET', `/runs/${id}/events?${query}`);
+  },
   cancelRun: (id: string) => request('POST', `/runs/${id}/cancel`, {}),
   retryRun: (id: string) => request('POST', `/runs/${id}/retry`, {}),
   skipStep: (id: string) => request('POST', `/runs/${id}/skip`, {}),
