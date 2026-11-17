@@ -43,6 +43,8 @@ interface ActiveRun {
   controller: AbortController;
   skipRequested: boolean;
   pendingDefinition?: WorkflowDefinition;
+  /** The workflow version `pendingDefinition` comes from, if it is one. */
+  pendingVersion?: number;
 }
 
 const activeRuns = new Map<string, ActiveRun>();
@@ -81,8 +83,9 @@ export async function executeRun(runId: string): Promise<void> {
       if (next === 'paused') return;
       run.stepIndex = next;
       if (active.pendingDefinition) {
-        const plan = switchDefinition(run, active.pendingDefinition);
+        const plan = switchDefinition(run, active.pendingDefinition, active.pendingVersion);
         active.pendingDefinition = undefined;
+        active.pendingVersion = undefined;
         workflow = workflowForRun(run);
         if (plan.sections.includes('environment')) await prepare(workflow);
       }
@@ -102,7 +105,7 @@ export async function executeRun(runId: string): Promise<void> {
     activeRuns.delete(runId);
   }
   // The run stopped (waiting, failed, cancelled) before it could switch to a newer definition: switch now.
-  if (active.pendingDefinition) applyToStoppedRun(run, active.pendingDefinition);
+  if (active.pendingDefinition) applyToStoppedRun(run, active.pendingDefinition, active.pendingVersion);
   // The step that was running has been stopped and passed over: carry on with the next one.
   if (active.skipRequested) await executeRun(runId);
 }
@@ -208,11 +211,11 @@ function buildRuntime(run: Run, workflow: Workflow, step: StepConfig, scope: Rec
   };
 }
 
-/** The workflow a run belongs to, pinned to the definition the run started with. */
+/** The workflow a run belongs to, pinned to the definition (and version) the run started with. */
 function workflowForRun(run: Run): Workflow {
   const workflow = getWorkflow(run.workflowId);
   if (!workflow) throw new Error('The workflow of this run was deleted');
-  return { ...workflow, definition: run.definition };
+  return { ...workflow, definition: run.definition, version: run.workflowVersion ?? workflow.version };
 }
 
 function finish(run: Run, status: 'succeeded' | 'failed' | 'cancelled', error?: string): void {
@@ -319,9 +322,10 @@ function skipCurrentStep(run: Run): void {
  *  - running: the step that runs now finishes as it is, the switch happens right after it
  *  - waiting, failed, cancelled: the switch happens now; a failed run then continues on Retry
  *  - waiting at a block that `definition` removed: its approval is dismissed and the run continues
+ * `version` is the workflow version the definition comes from; the run records it as `workflowVersion`.
  * Returns the plan, and whether the switch still has to wait for the running step.
  */
-export function applyDefinition(runId: string, definition: WorkflowDefinition): { plan: ApplyPlan; deferred: boolean } {
+export function applyDefinition(runId: string, definition: WorkflowDefinition, version?: number): { plan: ApplyPlan; deferred: boolean } {
   const run = runs.getRun(runId);
   if (!run) throw new Error('Run not found');
   if (run.status === 'succeeded') throw new Error('This run has finished. Start a new run to use the latest workflow.');
@@ -332,16 +336,17 @@ export function applyDefinition(runId: string, definition: WorkflowDefinition): 
   const active = activeRuns.get(runId);
   if (active) {
     active.pendingDefinition = definition;
+    active.pendingVersion = version;
     runs.addEvent(run.id, null, 'definition_queued', { reason: 'The workflow changes apply once the current block is done.' });
     return { plan, deferred: true };
   }
-  applyToStoppedRun(run, definition);
+  applyToStoppedRun(run, definition, version);
   return { plan, deferred: false };
 }
 
 /** Switches a run that is not executing. A run waiting at a removed block has nothing left to wait for, so it continues. */
-function applyToStoppedRun(run: Run, definition: WorkflowDefinition): void {
-  const plan = switchDefinition(run, definition);
+function applyToStoppedRun(run: Run, definition: WorkflowDefinition, version: number | undefined): void {
+  const plan = switchDefinition(run, definition, version);
   runs.saveRun(run);
   if (run.status === 'waiting' && plan.currentRemoved) {
     runs.dismissPendingApprovals(run.id);
@@ -350,12 +355,14 @@ function applyToStoppedRun(run: Run, definition: WorkflowDefinition): void {
 }
 
 /** Replaces the run's definition in memory and moves its position to the matching block. The caller saves the run. */
-function switchDefinition(run: Run, definition: WorkflowDefinition): ApplyPlan {
+function switchDefinition(run: Run, definition: WorkflowDefinition, version: number | undefined): ApplyPlan {
   const plan = planApply(run.definition, definition, run.stepIndex);
-  // Versioning: this is the one place, besides runs.createRun, where a run's definition is set.
+  // The one place, besides runs.createRun, where a run's definition (and so its workflow version) is set.
+  const fromVersion = run.workflowVersion;
   run.definition = definition;
+  run.workflowVersion = version;
   run.stepIndex = plan.continueIndex;
-  runs.addEvent(run.id, null, 'definition_applied', { blocks: plan.blocks, sections: plan.sections, continueAt: plan.continueAt });
+  runs.addEvent(run.id, null, 'definition_applied', { blocks: plan.blocks, sections: plan.sections, continueAt: plan.continueAt, fromVersion, toVersion: version });
   return plan;
 }
 

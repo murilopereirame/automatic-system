@@ -20,7 +20,7 @@ flowchart LR
 | Page | What you do there |
 |------|-------------------|
 | **Workflows** | See all workflows, import a formula file, start a run |
-| **Workflow editor** | Build the workflow. Four tabs, all editing the same formula |
+| **Workflow editor** | Build the workflow. Four tabs edit the same formula; **History** shows its versions |
 | **Runs** | History of runs with their state and current block |
 | **Run** | Follow a run live, answer its approvals, open a shell, cancel, retry or skip a block |
 | **Inbox** | Every approval that is waiting for you, across all runs. The number in the navigation is the count |
@@ -45,6 +45,11 @@ flowchart LR
 - **Notifications**: the webhook calls, with templated URL, headers and body.
 - **Code**: the formula YAML. Edit and press **Apply to blocks**, and the
   blocks update. This is the same text **Export formula** downloads.
+- **History**: every saved version with its note, the line diff of a version
+  against the one before (or any other), **Restore this version**, and
+  **Export with history**. The title shows the current version, e.g. `v3`.
+  When there are unsaved changes, a *What changed?* box next to **Save** takes
+  a note for the new version. See [VERSIONING.md](VERSIONING.md).
 
 ![Environment tab](images/environment.png)
 

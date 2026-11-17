@@ -15,6 +15,20 @@ CREATE TABLE IF NOT EXISTS workflows (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+-- Every saved state of a workflow, like the commits of a git history. See docs/VERSIONING.md.
+CREATE TABLE IF NOT EXISTS workflow_versions (
+  workflow_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL,
+  enabled INTEGER NOT NULL,
+  definition TEXT NOT NULL,
+  message TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL,
+  restored_from INTEGER,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (workflow_id, version)
+);
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY,
   workflow_id TEXT NOT NULL,
@@ -68,11 +82,20 @@ CREATE TABLE IF NOT EXISTS trigger_seen (
 UPDATE OR IGNORE trigger_seen SET key = 'baseline:clickup' WHERE key = 'baseline';
 `;
 
+/** Adds a column to a table created by an older release. `CREATE TABLE IF NOT EXISTS` leaves existing tables as they are. */
+function addColumn(database: DatabaseSync, table: string, column: string, definition: string): void {
+  const columns = database.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!columns.some((existing) => existing.name === column)) database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
 function open(): DatabaseSync {
   mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
   const database = new DatabaseSync(path.join(config.dataDir, 'autoworker.db'));
   database.exec('PRAGMA journal_mode = WAL');
   database.exec(SCHEMA);
+  // The current version of a workflow, and the version a run executes. 0 means "from before versions existed".
+  addColumn(database, 'workflows', 'version', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn(database, 'runs', 'workflow_version', 'INTEGER');
   return database;
 }
 
@@ -80,4 +103,17 @@ export const db = open();
 
 export function now(): string {
   return new Date().toISOString();
+}
+
+/** Runs `work` in one transaction: either all of its writes are kept or none. */
+export function transaction<T>(work: () => T): T {
+  db.exec('BEGIN');
+  try {
+    const result = work();
+    db.exec('COMMIT');
+    return result;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 }

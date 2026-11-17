@@ -26,6 +26,7 @@ flowchart LR
 
 - **Workflows as blocks.** Build them in the web UI or write them as YAML. Both are the same data.
 - **Formulas.** Export a workflow with everything it needs (runtimes, MCP servers, Claude memory and skills, service containers, network allow list, environment variables, mounts, notification webhooks) and import it again after a redeploy.
+- **Versions with rollback.** Every save is a version. Compare any two, restore an old one (as a new version, so nothing is lost), and carry the history inside the formula.
 - **Triggers.** ClickUp task assigned to you (poll or webhook) and generic webhook. A workflow can have several, and "Run now" always works.
 - **Human in the loop.** Approval blocks pause a run. Reject with a comment and Claude reworks it.
 - **Edit while it runs.** Apply a saved workflow to runs that already started: finished blocks keep their results, the rest use the new blocks.
@@ -41,6 +42,7 @@ flowchart LR
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components, run life cycle, data model, with diagrams |
 | [docs/UI.md](docs/UI.md) | The web UI: pages, editor, run view, with screenshots |
 | [docs/FORMULA.md](docs/FORMULA.md) | Formula reference: triggers, environment, notifications, blocks, templates |
+| [docs/VERSIONING.md](docs/VERSIONING.md) | Workflow versions: history, diff, rollback, history in formulas |
 | [docs/EXPRESSIONS.md](docs/EXPRESSIONS.md) | Conditions: skipping blocks, if/else, and the expression language |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Running it with Docker, first workflow, volumes, updating, CI/CD |
 | [docs/SECURITY.md](docs/SECURITY.md) | How the sandbox works, what is verified on every build, known limits |

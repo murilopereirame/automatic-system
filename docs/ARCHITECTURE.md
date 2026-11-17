@@ -55,6 +55,7 @@ flowchart TB
 | `server/src/types.ts` | Domain types shared by every module |
 | `server/src/db.ts`, `store/` | SQLite schema and one small module per table group |
 | `server/src/formula.ts` | Validation of workflow definitions, YAML import and export |
+| `server/src/diff.ts` | Line diff, used to compare workflow versions. See [VERSIONING.md](VERSIONING.md) |
 | `server/src/inputs.ts` | Inputs of a manual run: checks the declarations and the values "Run now" sends |
 | `server/src/template.ts` | `{{ value }}` templating |
 | `server/src/expression.ts` | The expression language of conditions: parser and interpreter, no `eval`. See [EXPRESSIONS.md](EXPRESSIONS.md) |
@@ -235,6 +236,8 @@ What a block returns decides what happens next:
 ```mermaid
 erDiagram
     WORKFLOW ||--o{ RUN : "starts"
+    WORKFLOW ||--|{ WORKFLOW_VERSION : "keeps"
+    WORKFLOW_VERSION ||--o{ RUN : "is run as"
     RUN ||--o{ EVENT : "logs"
     RUN ||--o{ APPROVAL : "asks"
     WORKFLOW ||--o{ TRIGGER_SEEN : "deduplicates"
@@ -244,12 +247,21 @@ erDiagram
         bool enabled
         text hook_secret
         json definition
+        int version
+    }
+    WORKFLOW_VERSION {
+        int version
+        json definition
+        text message
+        text source
+        int restored_from
     }
     RUN {
         text id
         text status
         int step_index
         json definition
+        int workflow_version
         json context
         text workspace
     }

@@ -11,13 +11,33 @@ import { checkMounts, checkServices, readMemory, readSkills, writeMemory } from 
 import * as runs from '../store/runs.js';
 import { deleteSecret, listSecretNames, setSecret } from '../store/secrets.js';
 import { getSettings, saveSettings } from '../store/settings.js';
+import * as versions from '../store/versions.js';
 import * as workflows from '../store/workflows.js';
+import { diff } from '../diff.js';
 import { stepTypes } from '../steps/index.js';
 import { syncTriggers, triggerTypes } from '../triggers/index.js';
-import type { Run, RunEvent, Settings, Workflow } from '../types.js';
+import type { Run, RunEvent, Settings, Workflow, WorkflowVersion } from '../types.js';
 import { requireAuth } from './auth.js';
 
 type IdParams = { Params: { id: string } };
+type VersionParams = { Params: { id: string; version: string } };
+
+function versionOr404(workflowId: string, number: string): WorkflowVersion {
+  const version = versions.getVersion(workflowId, Number(number));
+  if (!version) throw new HttpError(404, `Version ${number} not found`);
+  return version;
+}
+
+/** A version as a workflow, so it can be written as a formula. */
+function asWorkflow(workflow: Workflow, version: WorkflowVersion): Workflow {
+  const { name, description, enabled, definition } = version;
+  return { ...workflow, name, description, enabled, definition, version: version.version };
+}
+
+/** The optional description of a change that the editor sends along with a save. */
+function changeMessage(body: any): string {
+  return typeof body?.message === 'string' ? body.message : '';
+}
 
 function workflowOr404(id: string): Workflow {
   const workflow = workflows.getWorkflow(id);
@@ -46,9 +66,11 @@ async function afterWorkflowChange(workflow: Workflow): Promise<void> {
  * the same name. Used by the import endpoint and by the startup import.
  */
 export async function importFormula(source: string): Promise<Workflow> {
-  const input = parseFormula(source);
+  const { history, ...input } = parseFormula(source);
   const existing = workflows.findWorkflowByName(input.name);
-  const workflow = existing ? workflows.updateWorkflow(existing.id, input)! : workflows.createWorkflow(input);
+  // A new workflow gets the history the formula carries. An existing one keeps its own and gains one version.
+  const note = { source: 'imported' as const, message: 'Imported from a formula' };
+  const workflow = existing ? workflows.updateWorkflow(existing.id, input, note)! : workflows.createWorkflow(input, note, history);
   await afterWorkflowChange(workflow);
   return workflow;
 }
@@ -97,14 +119,58 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
   app.get<IdParams>('/workflows/:id', async (request) => workflowOr404(request.params.id));
 
   app.post('/workflows', async (request) => {
-    const workflow = workflows.createWorkflow(workflowInput(request.body));
+    const workflow = workflows.createWorkflow(workflowInput(request.body), { message: changeMessage(request.body) });
     await afterWorkflowChange(workflow);
     return workflow;
   });
 
   app.put<IdParams>('/workflows/:id', async (request) => {
     workflowOr404(request.params.id);
-    const workflow = workflows.updateWorkflow(request.params.id, workflowInput(request.body))!;
+    const workflow = workflows.updateWorkflow(request.params.id, workflowInput(request.body), { message: changeMessage(request.body) })!;
+    await afterWorkflowChange(workflow);
+    return workflow;
+  });
+
+  // ---- Versions (see docs/VERSIONING.md) ------------------------------------
+
+  /** Newest first, without the definitions, which the history list does not need. */
+  app.get<IdParams>('/workflows/:id/versions', async (request) => {
+    workflowOr404(request.params.id);
+    const counts = runs.countRunsByVersion(request.params.id);
+    return versions.listVersions(request.params.id).map(({ definition: _definition, ...summary }) => ({ ...summary, runs: counts[summary.version] ?? 0 }));
+  });
+
+  app.get<VersionParams>('/workflows/:id/versions/:version', async (request) => {
+    workflowOr404(request.params.id);
+    return versionOr404(request.params.id, request.params.version);
+  });
+
+  /** A version as a formula, as it was saved. */
+  app.get<VersionParams>('/workflows/:id/versions/:version/formula', async (request, reply) => {
+    const workflow = workflowOr404(request.params.id);
+    reply.type('application/yaml');
+    return toFormula(asWorkflow(workflow, versionOr404(workflow.id, request.params.version)));
+  });
+
+  /** What changed between two versions, as a line diff of their formulas. `against` defaults to the version before. */
+  app.get<VersionParams & { Querystring: { against?: string } }>('/workflows/:id/versions/:version/diff', async (request) => {
+    const workflow = workflowOr404(request.params.id);
+    const newer = versionOr404(workflow.id, request.params.version);
+    const against = request.query.against ?? String(newer.version - 1);
+    const older = Number(against) >= 1 ? versionOr404(workflow.id, against) : undefined;
+    // Version 0 leaves `metadata.version` out, which would otherwise show up as a change in every diff.
+    const text = (version: WorkflowVersion) => toFormula({ ...asWorkflow(workflow, version), version: 0 });
+    return { from: older?.version ?? 0, to: newer.version, ...diff(older ? text(older) : '', text(newer)) };
+  });
+
+  /** Rollback: brings back an old version by saving its content as a new version. Nothing is lost. */
+  app.post<VersionParams>('/workflows/:id/versions/:version/restore', async (request) => {
+    const current = workflowOr404(request.params.id);
+    const old = versionOr404(current.id, request.params.version);
+    if (old.version === current.version) throw new HttpError(409, `Version ${old.version} is already the current version`);
+    const { name, description, enabled, definition } = old;
+    const message = changeMessage(request.body) || `Restored version ${old.version}`;
+    const workflow = workflows.updateWorkflow(current.id, { name, description, enabled, definition }, { source: 'restored', message, restoredFrom: old.version })!;
     await afterWorkflowChange(workflow);
     return workflow;
   });
@@ -131,7 +197,7 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
   /** Applies the saved definition to every open run that uses an older one. */
   app.post<IdParams>('/workflows/:id/apply-to-runs', async (request) => {
     const workflow = workflowOr404(request.params.id);
-    return outdatedRuns(workflow).map((run) => ({ runId: run.id, deferred: applyDefinition(run.id, workflow.definition).deferred }));
+    return outdatedRuns(workflow).map((run) => ({ runId: run.id, deferred: applyDefinition(run.id, workflow.definition, workflow.version).deferred }));
   });
 
   /** Which of the things a workflow expects from the deployment are actually there. */
@@ -142,10 +208,12 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
 
   // ---- Formulas ------------------------------------------------------------
 
-  app.get<IdParams>('/workflows/:id/formula', async (request, reply) => {
+  /** `?history=true` adds the earlier versions, so importing the file on a fresh deployment brings the history back. */
+  app.get<IdParams & { Querystring: { history?: string } }>('/workflows/:id/formula', async (request, reply) => {
     const workflow = workflowOr404(request.params.id);
+    const history = request.query.history === 'true' ? versions.listVersions(workflow.id).filter((version) => version.version < workflow.version) : undefined;
     reply.type('application/yaml');
-    return toFormula(workflow, { memory: await readMemory(workflow), skills: await readSkills(workflow) });
+    return toFormula(workflow, { memory: await readMemory(workflow), skills: await readSkills(workflow), history });
   });
 
   app.post('/formulas/import', async (request) => {
@@ -157,11 +225,14 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
   /** Converts between the block form and YAML without saving, for the code view of the editor. */
   app.post('/formulas/render', async (request) => {
     const body = request.body as any;
-    const workflow = { ...workflowInput(body), id: '', hookSecret: '', createdAt: '', updatedAt: '' } as Workflow;
+    const workflow = { ...workflowInput(body), id: '', hookSecret: '', version: 0, createdAt: '', updatedAt: '' } as Workflow;
     return { formula: toFormula(workflow) };
   });
 
-  app.post('/formulas/parse', async (request) => parseFormula(String((request.body as any)?.formula ?? '')));
+  app.post('/formulas/parse', async (request) => {
+    const { history: _history, ...draft } = parseFormula(String((request.body as any)?.formula ?? ''));
+    return draft;
+  });
 
   // ---- Runs ----------------------------------------------------------------
 
@@ -186,7 +257,7 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
     const run = runOr404(request.params.id);
     const workflow = workflows.getWorkflow(run.workflowId);
     if (!workflow) throw new HttpError(409, 'The workflow of this run was deleted');
-    return conflictOnError(() => applyDefinition(run.id, workflow.definition));
+    return conflictOnError(() => applyDefinition(run.id, workflow.definition, workflow.version));
   });
 
   app.post<IdParams>('/runs/:id/cancel', async (request) => {

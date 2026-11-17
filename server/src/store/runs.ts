@@ -18,6 +18,7 @@ interface RunRow {
   definition: string;
   context: string;
   workspace: string;
+  workflow_version: number | null;
   error: string | null;
   created_at: string;
   updated_at: string;
@@ -31,6 +32,7 @@ function runFromRow(row: RunRow): Run {
     status: row.status,
     stepIndex: row.step_index,
     definition: upgradeDefinition(JSON.parse(row.definition)),
+    ...(row.workflow_version !== null && { workflowVersion: row.workflow_version }),
     context: JSON.parse(row.context),
     workspace: row.workspace,
     error: row.error ?? undefined,
@@ -44,9 +46,9 @@ export function createRun(workflow: Workflow, workspaceRoot: string, context: Ru
   const id = randomUUID();
   const timestamp = now();
   db.prepare(
-    `INSERT INTO runs (id, workflow_id, workflow_name, status, step_index, definition, context, workspace, created_at, updated_at)
-     VALUES (?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?)`,
-  ).run(id, workflow.id, workflow.name, JSON.stringify(workflow.definition), JSON.stringify(context), path.join(workspaceRoot, id), timestamp, timestamp);
+    `INSERT INTO runs (id, workflow_id, workflow_name, status, step_index, definition, workflow_version, context, workspace, created_at, updated_at)
+     VALUES (?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, workflow.id, workflow.name, JSON.stringify(workflow.definition), workflow.version, JSON.stringify(context), path.join(workspaceRoot, id), timestamp, timestamp);
   return getRun(id)!;
 }
 
@@ -62,6 +64,12 @@ export function listRuns(filter: { workflowId?: string; limit?: number } = {}): 
   return (rows as unknown as RunRow[]).map(runFromRow);
 }
 
+/** How many runs each version of a workflow started (or was applied to). */
+export function countRunsByVersion(workflowId: string): Record<number, number> {
+  const rows = db.prepare('SELECT workflow_version AS version, COUNT(*) AS count FROM runs WHERE workflow_id = ? AND workflow_version IS NOT NULL GROUP BY workflow_version').all(workflowId) as { version: number; count: number }[];
+  return Object.fromEntries(rows.map((row) => [row.version, row.count]));
+}
+
 export function listRunsByStatus(status: RunStatus): Run[] {
   return (db.prepare('SELECT * FROM runs WHERE status = ?').all(status) as unknown as RunRow[]).map(runFromRow);
 }
@@ -69,10 +77,11 @@ export function listRunsByStatus(status: RunStatus): Run[] {
 /** Saves the mutable parts of a run and tells listeners about it. The definition changes only when newer workflow edits are applied to the run. */
 export function saveRun(run: Run): void {
   run.updatedAt = now();
-  db.prepare('UPDATE runs SET status = ?, step_index = ?, definition = ?, context = ?, error = ?, updated_at = ? WHERE id = ?').run(
+  db.prepare('UPDATE runs SET status = ?, step_index = ?, definition = ?, workflow_version = ?, context = ?, error = ?, updated_at = ? WHERE id = ?').run(
     run.status,
     run.stepIndex,
     JSON.stringify(run.definition),
+    run.workflowVersion ?? null,
     JSON.stringify(run.context),
     run.error ?? null,
     run.updatedAt,
