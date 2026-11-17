@@ -69,7 +69,8 @@ function describe(event: RunEvent): { label: string; tone?: string; body: ReactN
       const blocks = (data.blocks ?? []) as { name: string; kind: string; where: string }[];
       const ahead = blocks.filter((block) => block.where === 'ahead');
       const summary = ahead.length ? ahead.map((block) => `${block.name} (${block.kind})`).join(', ') : 'no blocks ahead changed';
-      return { label: 'Workflow edits applied', tone: 'heading', body: `${summary}. Continues with ${data.continueAt ?? 'the end of the run'}.` };
+      const versions = typeof data.toVersion === 'number' ? ` (${typeof data.fromVersion === 'number' ? `v${data.fromVersion} → ` : ''}v${data.toVersion})` : '';
+      return { label: `Workflow edits applied${versions}`, tone: 'heading', body: `${summary}. Continues with ${data.continueAt ?? 'the end of the run'}.` };
     }
     case 'retried':
       return { label: 'Retried', body: `from block ${data.fromStep}` };

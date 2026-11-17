@@ -29,6 +29,7 @@ metadata:
   name: My workflow          # required, identifies the workflow on import
   description: What it does
   enabled: true              # disabled workflows ignore their triggers
+  version: 3                 # written on export, ignored on import
 
 triggers:                    # what starts a run: any one of these
   - id: clickup              # optional, defaults to the type
@@ -62,7 +63,11 @@ steps:                       # the blocks, in order
     name: Implement the task
     if: "trigger.task.status != 'done'"   # optional condition
     with: { prompt: "..." }
+
+history: []                  # earlier versions, only in "Export with history"
 ```
+
+`metadata.version` and `history` are explained in [VERSIONING.md](VERSIONING.md#formulas-and-history).
 
 ## Templates
 

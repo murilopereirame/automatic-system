@@ -12,9 +12,9 @@ import { checkExpression } from './expression.js';
 import { END_OF_RUN } from './steps/condition.js';
 import { parseInputs } from './inputs.js';
 import { getStepType } from './steps/index.js';
-import type { WorkflowInput } from './store/workflows.js';
+import type { HistoryEntry, WorkflowInput } from './store/workflows.js';
 import { getTriggerType } from './triggers/index.js';
-import { emptyEnvironment, SCOPE_NAMES, type Environment, type MemoryFile, type NotificationWebhook, type SkillSpec, type StepConfig, type TriggerConfig, type Workflow, type WorkflowDefinition } from './types.js';
+import { emptyEnvironment, SCOPE_NAMES, type Environment, type MemoryFile, type NotificationWebhook, type SkillSpec, type StepConfig, type TriggerConfig, type VersionSource, type Workflow, type WorkflowDefinition, type WorkflowVersion } from './types.js';
 
 export const FORMULA_API_VERSION = 'autoworker/v1';
 
@@ -165,8 +165,47 @@ export function parseDefinition(input: unknown): WorkflowDefinition {
   };
 }
 
+const VERSION_SOURCES: VersionSource[] = ['created', 'edited', 'imported', 'restored'];
+
+/** Reads the optional `history` list: the earlier versions of the workflow, oldest first. */
+function parseHistory(input: unknown): HistoryEntry[] {
+  const entries = asArray(input, 'history').map((item, index): HistoryEntry => {
+    const raw = asObject(item, `history entry ${index + 1}`);
+    const version = Number(raw.version);
+    if (!Number.isInteger(version) || version < 1) invalid(`history entry ${index + 1} needs a version number of 1 or more`);
+    if (!raw.name) invalid(`version ${version} in the history needs a name`);
+    let definition: WorkflowDefinition;
+    try {
+      definition = parseDefinition(raw.definition);
+    } catch (error) {
+      invalid(`version ${version} in the history: ${errorMessage(error).replace(/^Invalid workflow: /, '')}`);
+    }
+    const source = VERSION_SOURCES.includes(raw.source as VersionSource) ? (raw.source as VersionSource) : 'edited';
+    const restoredFrom = raw.restoredFrom === undefined || raw.restoredFrom === null ? undefined : Number(raw.restoredFrom);
+    return {
+      version,
+      name: String(raw.name),
+      description: String(raw.description ?? ''),
+      enabled: raw.enabled !== false,
+      definition,
+      message: String(raw.message ?? ''),
+      source,
+      ...(restoredFrom !== undefined && { restoredFrom }),
+      createdAt: raw.createdAt ? String(raw.createdAt) : new Date().toISOString(),
+    };
+  });
+  entries.sort((left, right) => left.version - right.version);
+  entries.forEach((entry, index) => index > 0 && entry.version === entries[index - 1].version && invalid(`version ${entry.version} is in the history more than once`));
+  return entries;
+}
+
+/** What a formula describes: the workflow, and the earlier versions it carries, if any. */
+export interface ParsedFormula extends WorkflowInput {
+  history: HistoryEntry[];
+}
+
 /** Parses a formula YAML document into what is needed to create or update a workflow. */
-export function parseFormula(source: string): WorkflowInput {
+export function parseFormula(source: string): ParsedFormula {
   let document: unknown;
   try {
     document = YAML.parse(source);
@@ -184,21 +223,46 @@ export function parseFormula(source: string): WorkflowInput {
     description: String(metadata.description ?? ''),
     enabled: metadata.enabled !== false,
     definition: parseDefinition(raw),
+    history: parseHistory(raw.history),
   };
 }
 
-/** Serialises a workflow as a formula. `snapshot` lets the caller pass memory and skills as they are on disk right now. */
-export function toFormula(workflow: Workflow, snapshot: { memory?: MemoryFile[]; skills?: SkillSpec[] } = {}): string {
+export interface FormulaOptions {
+  /** Memory and skills as they are on disk right now, instead of as they were saved. */
+  memory?: MemoryFile[];
+  skills?: SkillSpec[];
+  /** Earlier versions to include under `history`, so an import can recreate them. */
+  history?: WorkflowVersion[];
+}
+
+/** Serialises a workflow as a formula. */
+export function toFormula(workflow: Workflow, options: FormulaOptions = {}): string {
   const { triggers, inputs = [], environment, notifications, steps } = workflow.definition;
   const document = {
     apiVersion: FORMULA_API_VERSION,
     kind: 'Formula',
-    metadata: { name: workflow.name, description: workflow.description, enabled: workflow.enabled },
+    // `version` is for people reading the file. An import numbers versions itself (see docs/VERSIONING.md).
+    metadata: { name: workflow.name, description: workflow.description, enabled: workflow.enabled, ...(workflow.version > 0 && { version: workflow.version }) },
     triggers,
     inputs,
-    environment: { ...environment, memory: snapshot.memory ?? environment.memory, skills: snapshot.skills ?? environment.skills },
+    environment: { ...environment, memory: options.memory ?? environment.memory, skills: options.skills ?? environment.skills },
     notifications,
     steps,
+    ...(options.history?.length && {
+      history: [...options.history]
+        .sort((left, right) => left.version - right.version)
+        .map(({ version, createdAt, source, restoredFrom, message, name, description, enabled, definition }) => ({
+          version,
+          createdAt,
+          source,
+          ...(restoredFrom !== undefined && { restoredFrom }),
+          message,
+          name,
+          description,
+          enabled,
+          definition,
+        })),
+    }),
   };
   return YAML.stringify(document, { lineWidth: 0 });
 }

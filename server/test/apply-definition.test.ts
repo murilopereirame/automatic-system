@@ -145,6 +145,8 @@ test('the API reports outdated runs, previews the change and applies it to one o
 
   assert.equal((await app.inject({ method: 'POST', url: `/api/runs/${first.id}/apply-latest`, headers: auth })).statusCode, 200);
   assert.equal((await detail(first.id)).outdated, false);
+  assert.equal((await detail(first.id)).run.workflowVersion, 2, 'the run now records the version it was switched to');
+  assert.equal((await detail(second.id)).run.workflowVersion, 1);
   const applied = (await app.inject({ method: 'POST', url: `/api/workflows/${workflow.id}/apply-to-runs`, headers: auth })).json();
   assert.deepEqual(applied, [{ runId: second.id, deferred: false }]);
   assert.equal((await app.inject({ url: `/api/workflows/${workflow.id}/outdated-runs`, headers: auth })).json().length, 0);
