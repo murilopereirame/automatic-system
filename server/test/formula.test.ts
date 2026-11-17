@@ -15,7 +15,7 @@ test('the example formula is valid and survives an export/import round trip', ()
   assert.deepEqual(input.definition.triggers.map((trigger) => trigger.type), ['clickup', 'webhook']);
   assert.ok(input.definition.steps.length >= 6);
 
-  const workflow = { ...input, id: 'w1', description: input.description ?? '', enabled: input.enabled ?? true, hookSecret: 'never-exported', createdAt: '', updatedAt: '' };
+  const workflow = { ...input, id: 'w1', description: input.description ?? '', enabled: input.enabled ?? true, hookSecret: 'never-exported', version: 0, createdAt: '', updatedAt: '' };
   const exported = toFormula(workflow);
   assert.ok(!exported.includes('never-exported'), 'the webhook secret must not be exported');
   assert.deepEqual(parseFormula(exported), input);

@@ -1,5 +1,8 @@
 /** Typed access to the server API. The domain types are shared with the server. */
-import type { Approval, FieldSpec, Run, RunEvent, Settings, Workflow, WorkflowDefinition } from '../../server/src/types.ts';
+import type { Approval, FieldSpec, Run, RunEvent, Settings, Workflow, WorkflowDefinition, WorkflowVersion } from '../../server/src/types.ts';
+import type { Diff } from '../../server/src/diff.ts';
+
+export type { Diff, DiffLine } from '../../server/src/diff.ts';
 
 export type * from '../../server/src/types.ts';
 
@@ -21,6 +24,15 @@ export interface WorkflowDraft {
   description: string;
   enabled: boolean;
   definition: WorkflowDefinition;
+}
+
+/** A row of the version history: a version without its definition, and how many runs used it. */
+export type VersionSummary = Omit<WorkflowVersion, 'definition'> & { runs: number };
+
+export interface VersionDiff extends Diff {
+  /** 0 when `to` is the first version. */
+  from: number;
+  to: number;
 }
 
 export interface PendingApproval extends Approval {
@@ -84,12 +96,18 @@ export const api = {
   workflows: () => request<Workflow[]>('GET', '/workflows'),
   workflow: (id: string) => request<Workflow>('GET', `/workflows/${id}`),
   createWorkflow: (draft: WorkflowDraft) => request<Workflow>('POST', '/workflows', draft),
-  updateWorkflow: (id: string, draft: WorkflowDraft) => request<Workflow>('PUT', `/workflows/${id}`, draft),
+  /** `message` describes the change; it is kept with the version the save creates. */
+  updateWorkflow: (id: string, draft: WorkflowDraft, message = '') => request<Workflow>('PUT', `/workflows/${id}`, { ...draft, message }),
   deleteWorkflow: (id: string) => request('DELETE', `/workflows/${id}`),
   runWorkflow: (id: string, payload: unknown = {}) => request<Run>('POST', `/workflows/${id}/run`, payload),
   requirements: (id: string) => request<Requirements>('GET', `/workflows/${id}/requirements`),
 
-  exportFormula: (id: string) => request<string>('GET', `/workflows/${id}/formula`),
+  versions: (id: string) => request<VersionSummary[]>('GET', `/workflows/${id}/versions`),
+  versionDiff: (id: string, version: number, against?: number) =>
+    request<VersionDiff>('GET', `/workflows/${id}/versions/${version}/diff${against === undefined ? '' : `?against=${against}`}`),
+  restoreVersion: (id: string, version: number) => request<Workflow>('POST', `/workflows/${id}/versions/${version}/restore`, {}),
+
+  exportFormula: (id: string, withHistory = false) => request<string>('GET', `/workflows/${id}/formula${withHistory ? '?history=true' : ''}`),
   importFormula: (yaml: string) => request<Workflow>('POST', '/formulas/import', yaml, 'application/yaml'),
   renderFormula: (draft: WorkflowDraft) => request<{ formula: string }>('POST', '/formulas/render', draft),
   parseFormula: (formula: string) => request<WorkflowDraft>('POST', '/formulas/parse', { formula }),

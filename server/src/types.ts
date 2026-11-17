@@ -154,8 +154,32 @@ export interface Workflow {
   /** Random value that webhook callers must present. Never exported. */
   hookSecret: string;
   definition: WorkflowDefinition;
+  /** Number of the current version. Every save that changes something adds one (see store/versions.ts). */
+  version: number;
   createdAt: string;
   updatedAt: string;
+}
+
+/** How a version came to be. */
+export type VersionSource = 'created' | 'edited' | 'imported' | 'restored';
+
+/**
+ * One saved state of a workflow, like a commit. Versions are never changed or
+ * deleted while the workflow exists: restoring an old one adds a new version.
+ */
+export interface WorkflowVersion {
+  workflowId: string;
+  version: number;
+  name: string;
+  description: string;
+  enabled: boolean;
+  definition: WorkflowDefinition;
+  /** What changed, in the words of whoever saved it. May be empty. */
+  message: string;
+  source: VersionSource;
+  /** For `restored` versions: the version whose content was brought back. */
+  restoredFrom?: number;
+  createdAt: string;
 }
 
 export type RunStatus = 'queued' | 'running' | 'waiting' | 'succeeded' | 'failed' | 'cancelled';
@@ -203,6 +227,8 @@ export interface Run {
   stepIndex: number;
   /** Copy of the workflow definition taken when the run started, so later edits do not affect it. */
   definition: WorkflowDefinition;
+  /** The workflow version `definition` was taken from. Missing on runs from before workflows had versions. */
+  workflowVersion?: number;
   context: RunContext;
   workspace: string;
   error?: string;

@@ -58,7 +58,7 @@ test('inputs are part of the formula, and formulas without them still import', (
     { name: 'task.id', type: 'text', required: true },
     { name: 'env', type: 'select', options: ['staging', 'production'], default: 'staging' },
   ]);
-  const exported = toFormula({ ...input, id: 'w', description: '', enabled: true, hookSecret: '', createdAt: '', updatedAt: '' });
+  const exported = toFormula({ ...input, id: 'w', description: '', enabled: true, hookSecret: '', version: 0, createdAt: '', updatedAt: '' });
   assert.deepEqual(parseFormula(exported).definition.inputs, input.definition.inputs);
 
   assert.throws(() => parseFormula(formula('inputs: [{ name: "1bad" }]\n')), /Invalid workflow: input "1bad"/);

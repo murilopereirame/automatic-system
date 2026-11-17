@@ -1,4 +1,4 @@
-/** Create or edit a workflow: blocks, environment, notifications, and the formula as code. */
+/** Create or edit a workflow: blocks, environment, notifications, the formula as code, and its version history. */
 import { useEffect, useState } from 'react';
 import { api, type Workflow, type WorkflowDraft } from '../api.ts';
 import { BlockPipeline } from '../components/BlockPipeline.tsx';
@@ -7,10 +7,11 @@ import { ErrorNote, PageHeader } from '../components/common.tsx';
 import { EnvironmentEditor } from '../components/EnvironmentEditor.tsx';
 import { NotificationsEditor } from '../components/NotificationsEditor.tsx';
 import { useRunNow } from '../components/RunNowDialog.tsx';
+import { VersionHistory } from '../components/VersionHistory.tsx';
 import { useLoad } from '../hooks.ts';
 import { navigate } from '../router.ts';
 
-const TABS = ['Blocks', 'Environment', 'Notifications', 'Code'] as const;
+const TABS = ['Blocks', 'Environment', 'Notifications', 'Code', 'History'] as const;
 type Tab = (typeof TABS)[number];
 
 const NEW_WORKFLOW: WorkflowDraft = {
@@ -49,6 +50,8 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
   const [tab, setTab] = useState<Tab>('Blocks');
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  /** Optional description of the change, kept with the version the next save creates. */
+  const [changeNote, setChangeNote] = useState('');
 
   useEffect(() => {
     if (!workflowId) return;
@@ -65,11 +68,12 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
 
   const save = async (): Promise<Workflow | undefined> => {
     try {
-      const workflow = workflowId ? await api.updateWorkflow(workflowId, draft) : await api.createWorkflow(draft);
+      const workflow = workflowId ? await api.updateWorkflow(workflowId, draft, changeNote) : await api.createWorkflow(draft);
       setSaved(workflow);
       setDraft(toDraft(workflow));
+      setChangeNote('');
       setError(undefined);
-      setNotice('Saved');
+      setNotice(`Saved as version ${workflow.version}`);
       requirements.reload();
       if (!workflowId) navigate(`/workflows/${workflow.id}`);
       return workflow;
@@ -84,7 +88,16 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
     if (workflow) runNow(workflow);
   };
 
-  const exportFormula = () => saved && api.exportFormula(saved.id).then((yaml) => download(`${saved.name.replace(/\W+/g, '-').toLowerCase()}.formula.yaml`, yaml), fail);
+  const exportFormula = (withHistory = false) =>
+    saved && api.exportFormula(saved.id, withHistory).then((yaml) => download(`${saved.name.replace(/\W+/g, '-').toLowerCase()}.formula.yaml`, yaml), fail);
+
+  const restored = (workflow: Workflow) => {
+    setSaved(workflow);
+    setDraft(toDraft(workflow));
+    setNotice(`Restored as version ${workflow.version}`);
+    setError(undefined);
+    requirements.reload();
+  };
 
   const remove = () => {
     if (saved && window.confirm(`Delete the workflow "${saved.name}"? Its runs stay in the history.`)) {
@@ -96,9 +109,19 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
 
   return (
     <>
-      <PageHeader title={workflowId ? draft.name || 'Workflow' : 'New workflow'}>
+      <PageHeader
+        title={
+          <>
+            {workflowId ? draft.name || 'Workflow' : 'New workflow'}
+            {saved && <span className="badge" title="Current version. See the History tab.">v{saved.version}</span>}
+          </>
+        }
+      >
         {notice && !dirty && <span className="muted">{notice}</span>}
-        {saved && <button onClick={exportFormula}>Export formula</button>}
+        {saved && dirty && (
+          <input className="change-note" value={changeNote} onChange={(event) => setChangeNote(event.target.value)} placeholder="What changed? (optional)" aria-label="Describe this change" />
+        )}
+        {saved && <button onClick={() => exportFormula()}>Export formula</button>}
         {saved && (
           <button className="danger" onClick={remove}>
             Delete
@@ -130,7 +153,7 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
       </section>
 
       <div className="tabs">
-        {TABS.map((name) => (
+        {TABS.filter((name) => name !== 'History' || saved).map((name) => (
           <button key={name} className={tab === name ? 'tab active' : 'tab'} onClick={() => setTab(name)}>
             {name}
           </button>
@@ -154,6 +177,7 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
         <EnvironmentEditor environment={draft.definition.environment} secretNames={secrets.data ?? []} requirements={requirements.data} egressEnforced={sandbox.data?.egressEnforced} onChange={(environment) => setDefinition({ environment })} />
       )}
       {tab === 'Notifications' && <NotificationsEditor notifications={draft.definition.notifications} onChange={(notifications) => setDefinition({ notifications })} />}
+      {tab === 'History' && saved && <VersionHistory workflow={saved} dirty={dirty} onRestored={restored} onExport={() => exportFormula(true)} />}
       {tab === 'Code' && <CodeView draft={draft} onApply={(applied) => (setDraft(applied), setTab('Blocks'))} />}
       {dialog}
     </>

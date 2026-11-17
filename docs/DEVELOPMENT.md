@@ -95,7 +95,8 @@ All routes under `/api` need the session cookie or `Authorization: Bearer <token
 | `GET /api/meta` | Catalogue of block and trigger types with their fields |
 | `GET/POST /api/workflows`, `GET/PUT/DELETE /api/workflows/:id` | Workflows |
 | `POST /api/workflows/:id/run` | Start a run manually. The JSON body is the trigger payload, checked against the workflow's `inputs` |
-| `GET /api/workflows/:id/formula` | Export as formula |
+| `GET /api/workflows/:id/formula` | Export as formula. `?history=true` adds the earlier versions |
+| `GET /api/workflows/:id/versions`, `.../versions/:n`, `.../versions/:n/diff`, `POST .../versions/:n/restore` | Version history, diff and rollback. See [VERSIONING.md](VERSIONING.md#api) |
 | `POST /api/formulas/import` | Import a formula (YAML body) |
 | `GET /api/runs`, `GET /api/runs/:id` | Runs, with events and approvals |
 | `POST /api/runs/:id/cancel`, `POST /api/runs/:id/retry`, `POST /api/runs/:id/skip` | Control a run: stop it, continue from the block it stopped at, or pass over that block |

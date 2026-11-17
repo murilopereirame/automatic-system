@@ -104,6 +104,14 @@ export function RunPage({ runId }: { runId: string }) {
       </PageHeader>
       <p className="muted">
         {triggerSummary(run.context)} · started <TimeAgo time={run.createdAt} />
+        {run.workflowVersion !== undefined && (
+          <>
+            {' · '}
+            <a href={`#/workflows/${run.workflowId}`} title="The workflow version this run executes. Compare versions in the History tab of the workflow.">
+              workflow v{run.workflowVersion}
+            </a>
+          </>
+        )}
         {run.context.repo && ` · ${run.context.repo.owner}/${run.context.repo.name} on ${run.context.repo.branch}`}
       </p>
       <ErrorNote message={error ?? (run.status === 'failed' ? run.error : undefined)} />

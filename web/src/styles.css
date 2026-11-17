@@ -936,3 +936,134 @@ pre.code {
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border);
 }
+
+/* ---- Version history --------------------------------------------------- */
+
+.history-layout {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .history-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.versions header,
+.version-detail header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.versions h2,
+.version-detail h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.version {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  padding: 8px;
+  color: var(--text);
+}
+
+.version:hover {
+  background: var(--surface-2);
+}
+
+.version.selected {
+  background: var(--running-bg);
+}
+
+.version-number {
+  font-family: var(--mono);
+  font-weight: 600;
+  min-width: 36px;
+}
+
+.version-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.version-message {
+  overflow-wrap: anywhere;
+}
+
+.diff-controls {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.diff-controls .field {
+  margin: 0;
+}
+
+.diff {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--code-bg);
+  color: var(--code-text);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.diff-hunk + .diff-hunk {
+  border-top: 1px dashed var(--border);
+}
+
+.diff-line {
+  display: grid;
+  grid-template-columns: 3.5em 3.5em 1.5em 1fr;
+  white-space: pre;
+  line-height: 1.5;
+}
+
+.diff-number {
+  text-align: right;
+  padding-right: 8px;
+  opacity: 0.5;
+  user-select: none;
+}
+
+.diff-sign {
+  user-select: none;
+  text-align: center;
+}
+
+.diff-added {
+  background: rgba(46, 160, 67, 0.22);
+}
+
+.diff-removed {
+  background: rgba(248, 81, 73, 0.22);
+}
+
+.diff-count-added {
+  color: var(--good);
+}
+
+.diff-count-removed {
+  color: var(--bad);
+}
+
+.change-note {
+  width: 240px;
+}

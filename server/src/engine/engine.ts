@@ -190,11 +190,11 @@ function buildRuntime(run: Run, workflow: Workflow, step: StepConfig, scope: Rec
   };
 }
 
-/** The workflow a run belongs to, pinned to the definition the run started with. */
+/** The workflow a run belongs to, pinned to the definition (and version) the run started with. */
 function workflowForRun(run: Run): Workflow {
   const workflow = getWorkflow(run.workflowId);
   if (!workflow) throw new Error('The workflow of this run was deleted');
-  return { ...workflow, definition: run.definition };
+  return { ...workflow, definition: run.definition, version: run.workflowVersion ?? workflow.version };
 }
 
 function finish(run: Run, status: 'succeeded' | 'failed' | 'cancelled', error?: string): void {
