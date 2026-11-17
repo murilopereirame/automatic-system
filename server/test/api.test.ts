@@ -87,7 +87,7 @@ test('a webhook starts a run only with the right secret', async () => {
 
   const [run] = (await app.inject({ url: `/api/runs?workflowId=${workflow.id}`, headers: auth })).json();
   assert.equal(run.status, 'succeeded');
-  const detail = (await app.inject({ url: `/api/runs/${run.id}`, headers: auth })).json();
+  const detail = (await app.inject({ url: `/api/runs/${run.id}/events`, headers: auth })).json();
   assert.ok(detail.events.some((event: any) => event.type === 'output' && /ref=main/.test(event.data.text)));
 });
 
@@ -112,10 +112,39 @@ test('a workflow with several triggers starts runs from each and reports which o
   assert.deepEqual(runs.map((run: any) => run.context.triggeredBy.id).sort(), ['deploys', 'manual', 'releases']);
 
   const released = runs.find((run: any) => run.context.triggeredBy.id === 'releases');
-  const detail = (await app.inject({ url: `/api/runs/${released.id}`, headers: auth })).json();
+  const detail = (await app.inject({ url: `/api/runs/${released.id}/events`, headers: auth })).json();
   const triggered = detail.events.find((event: any) => event.type === 'triggered');
   assert.deepEqual([triggered.data.trigger, triggered.data.triggerId], ['webhook', 'releases']);
   assert.ok(detail.events.some((event: any) => event.type === 'output' && /by=releases/.test(event.data.text)));
+});
+
+test('a run log comes in pages, newest first, and can be narrowed to one block', async () => {
+  const chatty = {
+    triggers: [],
+    steps: [
+      { id: 'first', type: 'shell', with: { command: 'echo one' } },
+      { id: 'second', type: 'shell', with: { command: 'echo two' } },
+    ],
+  };
+  const workflow = (await app.inject({ method: 'POST', url: '/api/workflows', headers: auth, payload: { name: 'Chatty', definition: chatty } })).json();
+  const run = (await app.inject({ method: 'POST', url: `/api/workflows/${workflow.id}/run`, headers: auth, payload: {} })).json();
+  await waitForIdle();
+  const page = async (query: string) => (await app.inject({ url: `/api/runs/${run.id}/events?${query}`, headers: auth })).json();
+
+  const all = await page('limit=1000');
+  assert.equal(all.hasOlder, false);
+  assert.equal((await app.inject({ url: `/api/runs/${run.id}`, headers: auth })).json().events, undefined, 'the run itself no longer carries its log');
+
+  const newest = await page('limit=3');
+  assert.deepEqual(newest.events.map((event: any) => event.id), all.events.slice(-3).map((event: any) => event.id), 'the newest page, oldest first');
+  assert.equal(newest.hasOlder, true);
+  const older = await page(`limit=3&before=${newest.events[0].id}`);
+  assert.deepEqual(older.events.map((event: any) => event.id), all.events.slice(-6, -3).map((event: any) => event.id));
+
+  const second = await page('stepId=second');
+  assert.ok(second.events.length > 0);
+  assert.ok(second.events.every((event: any) => event.stepId === 'second'));
+  assert.ok(second.events.some((event: any) => event.type === 'output' && /two/.test(event.data.text)));
 });
 
 test('approvals show up as pending and can be resolved through the API', async () => {

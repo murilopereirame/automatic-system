@@ -118,6 +118,34 @@ export function listEvents(runId: string, afterId = 0): RunEvent[] {
   return (rows as unknown as EventRow[]).map(eventFromRow);
 }
 
+/** One page of a run's log, oldest first. */
+export interface EventPage {
+  events: RunEvent[];
+  /** More events exist before the first one in `events`. */
+  hasOlder: boolean;
+}
+
+/**
+ * The newest `limit` events of a run, optionally only those of one block and only those before an event id.
+ * The run page loads its log this way so a run with a huge log never arrives in one piece.
+ */
+export function listEventPage(runId: string, options: { before?: number; stepId?: string; limit: number }): EventPage {
+  const where = ['run_id = ?'];
+  const params: (string | number)[] = [runId];
+  if (options.stepId) {
+    where.push('step_id = ?');
+    params.push(options.stepId);
+  }
+  if (options.before) {
+    where.push('id < ?');
+    params.push(options.before);
+  }
+  // Ask for one more than the page to learn whether older events exist.
+  const rows = db.prepare(`SELECT * FROM events WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ?`).all(...params, options.limit + 1) as unknown as EventRow[];
+  const hasOlder = rows.length > options.limit;
+  return { events: rows.slice(0, options.limit).reverse().map(eventFromRow), hasOlder };
+}
+
 interface ApprovalRow {
   id: string;
   run_id: string;

@@ -21,8 +21,11 @@ function connect(): void {
     listeners.forEach((listener) => listener.onRun?.(run));
   });
   source.addEventListener('event', (message) => {
+    // Every line of every run arrives here; only pay for parsing it when a page shows a log.
+    const interested = [...listeners].filter((listener) => listener.onEvent);
+    if (interested.length === 0) return;
     const event = JSON.parse((message as MessageEvent).data) as RunEvent;
-    listeners.forEach((listener) => listener.onEvent?.(event));
+    interested.forEach((listener) => listener.onEvent?.(event));
   });
 }
 
@@ -38,9 +41,10 @@ export function useLive(listener: Listener): void {
   latest.current = listener;
 
   useEffect(() => {
+    // Only subscribe to the kinds the component handles, so `connect` can skip the others.
     const stable: Listener = {
-      onRun: (run) => latest.current.onRun?.(run),
-      onEvent: (event) => latest.current.onEvent?.(event),
+      onRun: latest.current.onRun && ((run) => latest.current.onRun?.(run)),
+      onEvent: latest.current.onEvent && ((event) => latest.current.onEvent?.(event)),
     };
     listeners.add(stable);
     connect();

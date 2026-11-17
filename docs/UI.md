@@ -102,6 +102,47 @@ same payload under **Triggered**. Inputs are described in
 - **Open shell** starts a terminal in the run's workspace, as the same user
   and with the same environment as Claude. Use it to inspect the work or run
   git commands while the run waits for you.
+- Long runs show their newest activity first. **Load older activity** at the
+  top of the log brings back earlier entries, a page at a time. Very long
+  output or tool results show their last (or first) 20,000 characters, with
+  **Show earlier** / **Show the rest** for the remainder.
+
+### How the run page stays light
+
+A Claude block can write tens of thousands of lines. Before, the page
+downloaded the whole log, added every live line with a full re-render and
+refetched the whole log on every change of the run, which froze and could
+crash the tab. The page now keeps a bounded window of the log:
+
+```mermaid
+flowchart LR
+  subgraph Server
+    DB[(events table)]
+    P["GET /api/runs/:id/events<br/>newest 300, ?before= ?stepId="]
+    SSE["/api/stream (live events)"]
+  end
+  subgraph Browser
+    H["useRunLog<br/>buffers live events,<br/>applies them every 250 ms"]
+    W["LogWindow<br/>at most 2,000 events,<br/>oldest dropped"]
+    L["EventLog<br/>memoised entries,<br/>lazy details, clipped text"]
+  end
+  DB --> P -->|first page / Load older| H
+  DB -.-> SSE -->|batched| H
+  H --> W --> L
+```
+
+| Problem | What the page does now |
+|---------|------------------------|
+| The whole log was downloaded at once | `GET /api/runs/:id` no longer carries events. The log comes from `GET /api/runs/:id/events`, newest page first; older pages and one block's events on request |
+| Each live line re-rendered the whole log | Live events are buffered and applied every 250 ms; entries are memoised and only re-render when they change |
+| Every run update refetched everything | Run updates refetch only the run and its approvals, at most one request in flight |
+| The log grew forever | At most 2,000 events are kept; the oldest are dropped and can be loaded again |
+| Huge outputs and payloads were all in the DOM | Collapsed details are built only when opened; texts over 20,000 characters are clipped. Off-screen entries skip layout (`content-visibility: auto`) |
+| Every line of every run was parsed on every page | The shared live connection only parses log events when a page shows a log |
+
+The window logic is in `web/src/run-log.ts` (plain functions, tested in
+`web/test/run-log.test.ts`); `web/src/use-run-log.ts` connects it to the API
+and the live stream.
 
 ## Code structure
 
@@ -115,6 +156,7 @@ same payload under **Triggered**. Inputs are described in
 | `web/src/components/BlockPipeline.tsx` | The block editor |
 | `web/src/components/FieldInput.tsx` | Renders one setting from its field description |
 | `web/src/components/EventLog.tsx` | Renders run events by type |
+| `web/src/run-log.ts`, `web/src/use-run-log.ts` | The run page's bounded, paged, batched view of a run's log |
 | `web/src/components/Terminal.tsx` | xterm.js terminal for the web shell |
 | `web/src/components/ApplyLatestCard.tsx` | Run page card that previews and applies workflow edits to the run |
 

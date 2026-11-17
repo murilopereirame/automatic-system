@@ -37,7 +37,7 @@ Use the container for anything you do not fully trust.
 
 ## Tests
 
-Tests live in `server/test` and use the Node.js test runner. Nothing talks to
+Tests live in `server/test` (and, for UI logic without React, `web/test`) and use the Node.js test runner. Nothing talks to
 the internet:
 
 - `fixtures/fake-claude.mjs` stands in for the Claude CLI and speaks the same stream-json protocol.
@@ -98,7 +98,8 @@ All routes under `/api` need the session cookie or `Authorization: Bearer <token
 | `GET /api/workflows/:id/formula` | Export as formula. `?history=true` adds the earlier versions |
 | `GET /api/workflows/:id/versions`, `.../versions/:n`, `.../versions/:n/diff`, `POST .../versions/:n/restore` | Version history, diff and rollback. See [VERSIONING.md](VERSIONING.md#api) |
 | `POST /api/formulas/import` | Import a formula (YAML body) |
-| `GET /api/runs`, `GET /api/runs/:id` | Runs, with events and approvals |
+| `GET /api/runs`, `GET /api/runs/:id` | Runs; one run with its approvals |
+| `GET /api/runs/:id/events` | The run's log, newest page first: `{ events, hasOlder }`. `?before=<event id>` pages back, `?stepId=` keeps one block, `?limit=` (default 300, max 1000) |
 | `POST /api/runs/:id/cancel`, `POST /api/runs/:id/retry`, `POST /api/runs/:id/skip` | Control a run: stop it, continue from the block it stopped at, or pass over that block |
 | `GET /api/runs/:id/apply-latest`, `POST /api/runs/:id/apply-latest` | Preview, or apply, switching a run to the saved workflow. `GET /api/runs/:id` says `outdated: true` when there is something to apply |
 | `GET /api/workflows/:id/outdated-runs`, `POST /api/workflows/:id/apply-to-runs` | Open runs still on an older definition, and applying the saved one to all of them |
