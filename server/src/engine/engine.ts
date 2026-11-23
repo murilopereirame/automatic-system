@@ -16,8 +16,14 @@
  * step whose `if` is false is skipped, and a condition block can name the
  * step the run continues with (see `jump`).
  *
+ * A block with `pauseBefore` stops the run before it starts, like an approval
+ * block does after it ran (see docs/PAUSE_BEFORE.md).
+ *
  * A run keeps its own copy of the workflow definition. `applyDefinition`
  * switches that copy to a newer one (see apply-definition.ts).
+ *
+ * A person can add values to an open run with `setRunValue`. Blocks that run
+ * after that read them as `vars.<name>` (see run-values.ts).
  *
  * Once a run has ended, `cleanUpRun` deletes its files (see cleanup.ts), on
  * its own when the workflow's cleanup setting says so, or when a person asks.
@@ -36,8 +42,9 @@ import { getStepType } from '../steps/index.js';
 import { planApply, type ApplyPlan } from './apply-definition.js';
 import { cleansUpAutomatically, removeRunFiles } from './cleanup.js';
 import { text, type StepRuntime } from '../steps/types.js';
+import { listValues, withoutValue, withValue } from '../run-values.js';
 import { renderDeep } from '../template.js';
-import { MANUAL_TRIGGER, type Run, type SCOPE_NAMES, type StepConfig, type TriggerRef, type Workflow, type WorkflowDefinition } from '../types.js';
+import { MANUAL_TRIGGER, type Approval, type ApprovalKind, type Run, type SCOPE_NAMES, type StepConfig, type TriggerRef, type Workflow, type WorkflowDefinition } from '../types.js';
 
 /**
  * A run that is executing right now: how to stop its current step, whether
@@ -45,6 +52,8 @@ import { MANUAL_TRIGGER, type Run, type SCOPE_NAMES, type StepConfig, type Trigg
  * the current step is done (a step is never changed while it runs).
  */
 interface ActiveRun {
+  /** The run object the engine executes and saves. Changes from outside while it runs (injected values, prompt edits) go here, or its next save would undo them. */
+  run: Run;
   controller: AbortController;
   skipRequested: boolean;
   pendingDefinition?: WorkflowDefinition;
@@ -58,6 +67,8 @@ const SKIPPED_BY_HAND = 'skipped by hand';
 
 /** Cleanups that are deleting files right now, by run id. */
 const cleanups = new Map<string, Promise<void>>();
+/** Runs whose automatic cleanup is scheduled but has not started yet. Only `waitForIdle` needs it. */
+const scheduledCleanups = new Set<string>();
 
 /** Statuses of a run that has ended. Only those runs can be cleaned up. */
 const ENDED = new Set<Run['status']>(['succeeded', 'failed', 'cancelled']);
@@ -78,7 +89,7 @@ export async function executeRun(runId: string): Promise<void> {
   if (!run || activeRuns.has(runId)) return;
 
   const controller = new AbortController();
-  const active: ActiveRun = { controller, skipRequested: false };
+  const active: ActiveRun = { run, controller, skipRequested: false };
   activeRuns.set(runId, active);
   run.status = 'running';
   run.error = undefined;
@@ -135,22 +146,36 @@ async function executeStep(run: Run, workflow: Workflow, step: StepConfig, signa
     return run.stepIndex + 1;
   }
 
+  const runtime = buildRuntime(run, workflow, step, scope, signal);
+  if (step.pauseBefore && run.context.released !== step.id) return pauseBefore(run, step, stepType.preview?.(runtime) ?? {});
+  delete run.context.released;
+
   runs.addEvent(run.id, step.id, 'step_started', { type: step.type, name: step.name ?? stepType.title });
-  const result = await stepType.execute(buildRuntime(run, workflow, step, scope, signal));
+  const result = await stepType.execute(runtime);
   signal.throwIfAborted();
 
-  if ('pause' in result) {
-    const approval = runs.createApproval(run.id, step.id, result.pause.message);
-    run.status = 'waiting';
-    runs.saveRun(run);
-    runs.addEvent(run.id, step.id, 'approval_requested', { approvalId: approval.id, message: approval.message });
-    void sendNotification(run, { title: `${run.workflowName}: your action is needed`, message: approval.message });
-    return 'paused';
-  }
+  if ('pause' in result) return waitForPerson(run, step, result.pause.message);
 
   run.context.steps[step.id] = { output: result.output ?? null };
   runs.addEvent(run.id, step.id, 'step_finished', { output: result.output ?? null });
   return result.goTo ? jump(run, step, result.goTo) : run.stepIndex + 1;
+}
+
+/** Stops the run until a person answers in the UI (see `resolveApproval`). */
+function waitForPerson(run: Run, step: StepConfig, message: string, kind: ApprovalKind = 'approval', data: Record<string, unknown> = {}): 'paused' {
+  const approval = runs.createApproval(run.id, step.id, message, kind, data);
+  run.status = 'waiting';
+  runs.saveRun(run);
+  runs.addEvent(run.id, step.id, 'approval_requested', { approvalId: approval.id, kind, message: approval.message });
+  void sendNotification(run, { title: `${run.workflowName}: your action is needed`, message: approval.message });
+  return 'paused';
+}
+
+/** Stops the run before `step` starts. `preview` is what the person checks, e.g. the prompt of a Claude block. */
+function pauseBefore(run: Run, step: StepConfig, preview: Record<string, unknown>): 'paused' {
+  const name = step.name ?? step.id;
+  const message = typeof preview.prompt === 'string' ? `"${name}" is about to run. Check the prompt, change it if needed, and run the block.` : `"${name}" is about to run. Run it when you are ready.`;
+  return waitForPerson(run, step, message, 'before_step', preview);
 }
 
 /** The values the current step can read. `previous` is the block right above it in the list. */
@@ -165,6 +190,7 @@ function scopeFor(run: Run): Record<(typeof SCOPE_NAMES)[number], unknown> {
     run: { id: run.id, outputDir: runOutputDir(run.id) },
     repo: context.repo,
     repos: context.repos,
+    vars: context.vars ?? {},
   };
 }
 
@@ -238,7 +264,13 @@ function finish(run: Run, status: 'succeeded' | 'failed' | 'cancelled', error?: 
   runs.saveRun(run);
   runs.addEvent(run.id, null, 'run_finished', { status, error });
   // After the current call stack, so executeRun has let go of the run first.
-  if (cleansUpAutomatically(run, status)) setImmediate(() => void cleanUpRun(run.id, 'automatic').catch(() => {}));
+  if (cleansUpAutomatically(run, status)) {
+    scheduledCleanups.add(run.id);
+    setImmediate(() => {
+      scheduledCleanups.delete(run.id);
+      void cleanUpRun(run.id, 'automatic').catch(() => {});
+    });
+  }
 }
 
 /**
@@ -297,13 +329,14 @@ function assertNotCleaned(run: Run): void {
  *  - rejected with "On reject, go back to" configured: resume at that step, with the comment as feedback for Claude
  *  - rejected otherwise: the run ends as cancelled
  */
-export function resolveApproval(approvalId: string, decision: 'approved' | 'rejected', comment: string): void {
+export function resolveApproval(approvalId: string, decision: 'approved' | 'rejected', comment: string, answer: ApprovalAnswer = {}): void {
   const approval = runs.getApproval(approvalId);
   if (!approval || approval.status !== 'pending') throw new Error('This approval is no longer pending');
   const run = runs.getRun(approval.runId);
   if (!run || run.status !== 'waiting') throw new Error('The run is not waiting for approval');
 
   const step = run.definition.steps[run.stepIndex];
+  if (approval.kind === 'before_step') return releaseStep(run, step, approval, decision, comment, answer);
   runs.resolveApproval(approvalId, decision, comment);
   run.context.steps[step.id] = { output: { decision, comment } };
   runs.addEvent(run.id, step.id, 'approval_resolved', { approvalId, decision, comment });
@@ -318,6 +351,62 @@ export function resolveApproval(approvalId: string, decision: 'approved' | 'reje
   }
   runs.saveRun(run);
   void executeRun(run.id);
+}
+
+/** What a person can hand over with their answer, besides the comment. */
+export interface ApprovalAnswer {
+  /** For a pause before a "Run Claude" block: the prompt to send instead of the one shown. */
+  prompt?: string;
+}
+
+/**
+ * Answers a pause before a block.
+ *  - approved: the block runs now, with the edited prompt if one was given (used for this start only)
+ *  - rejected: the run ends as cancelled
+ */
+function releaseStep(run: Run, step: StepConfig, approval: Approval, decision: 'approved' | 'rejected', comment: string, answer: ApprovalAnswer): void {
+  const edited = decision === 'approved' && answer.prompt !== undefined && answer.prompt !== approval.data.prompt;
+  if (edited && !answer.prompt!.trim()) throw new Error('The prompt cannot be empty');
+  runs.resolveApproval(approval.id, decision, comment);
+  runs.addEvent(run.id, step.id, 'approval_resolved', { approvalId: approval.id, kind: approval.kind, decision, comment });
+  if (decision === 'rejected') return finish(run, 'cancelled', `Stopped before "${step.name ?? step.id}"${comment ? `: ${comment}` : ''}`);
+
+  run.context.released = step.id;
+  if (edited) {
+    run.context.promptOnce = { ...run.context.promptOnce, [step.id]: answer.prompt! };
+    runs.addEvent(run.id, step.id, 'prompt_edited', { when: 'before run' });
+  }
+  runs.saveRun(run);
+  void executeRun(run.id);
+}
+
+/**
+ * Sets (or with `null` clears) the prompt a "Run Claude" block of this run uses
+ * instead of the workflow's, every time it starts from now on. It is a template,
+ * like the workflow's prompt. A block that is running right now keeps the
+ * prompt it started with; the change applies to its next start.
+ */
+export function setPromptOverride(runId: string, stepId: string, prompt: string | null): Run {
+  // A run that is executing is changed in the engine's own copy, which it saves after each block.
+  const run = activeRuns.get(runId)?.run ?? runs.getRun(runId);
+  if (!run) throw new Error('Run not found');
+  if (run.status === 'succeeded') throw new Error('This run has finished');
+  assertNotCleaned(run);
+  const step = run.definition.steps.find((candidate) => candidate.id === stepId);
+  if (!step) throw new Error(`This run has no block "${stepId}"`);
+  if (step.type !== 'claude') throw new Error('Only "Run Claude" blocks have a prompt');
+
+  const overrides = { ...run.context.promptOverrides };
+  if (prompt === null) {
+    delete overrides[stepId];
+  } else {
+    if (!prompt.trim()) throw new Error('The prompt cannot be empty');
+    overrides[stepId] = prompt;
+  }
+  run.context.promptOverrides = overrides;
+  runs.saveRun(run);
+  runs.addEvent(run.id, stepId, prompt === null ? 'prompt_override_cleared' : 'prompt_override_set', {});
+  return run;
 }
 
 export function cancelRun(runId: string): void {
@@ -435,6 +524,48 @@ function switchDefinition(run: Run, definition: WorkflowDefinition, version: num
   return plan;
 }
 
+/** Runs that can still use a value: everything but a run that has finished successfully. */
+const ACCEPTS_VALUES = new Set<Run['status']>(['queued', 'running', 'waiting', 'failed', 'cancelled']);
+
+/**
+ * The run to change from outside the loop: the loop's own object while the
+ * run executes, so the change is not overwritten by its next save, otherwise
+ * the stored run.
+ */
+function runToChange(runId: string): Run {
+  const run = activeRuns.get(runId)?.run ?? runs.getRun(runId);
+  if (!run) throw new Error('Run not found');
+  if (!ACCEPTS_VALUES.has(run.status)) throw new Error('This run has finished. Values can only be added to a run that is still open.');
+  if (run.cleanedAt) throw new Error('The files of this run were cleaned up, so it cannot continue. Start a new run instead.');
+  return run;
+}
+
+/**
+ * Adds a value to an open run, or replaces it. Blocks that start after this
+ * read it as `vars.<name>`. A block that is running right now does not see it:
+ * its settings were filled in when it started.
+ */
+export function setRunValue(runId: string, name: string, value: unknown): Record<string, unknown> {
+  const run = runToChange(runId);
+  const vars = withValue(run.context.vars, name, value);
+  const replaced = listValues(run.context.vars).some(([existing]) => existing === name);
+  run.context.vars = vars;
+  runs.saveRun(run);
+  runs.addEvent(run.id, null, 'value_set', { name, value, replaced, atStep: run.definition.steps[run.stepIndex]?.id ?? null });
+  return vars;
+}
+
+/** Removes a value a person added. Blocks that start after this read it as empty. */
+export function removeRunValue(runId: string, name: string): Record<string, unknown> {
+  const run = runToChange(runId);
+  const { vars, removed } = withoutValue(run.context.vars, name);
+  if (!removed) throw new Error(`This run has no value named "${name}"`);
+  run.context.vars = vars;
+  runs.saveRun(run);
+  runs.addEvent(run.id, null, 'value_removed', { name });
+  return vars;
+}
+
 /** Called once at startup: runs that were executing when the server stopped cannot continue on their own. */
 export function recoverInterruptedRuns(): void {
   for (const status of ['running', 'queued'] as const) {
@@ -446,7 +577,7 @@ export function recoverInterruptedRuns(): void {
 
 /** Resolves when no run is executing and no cleanup is deleting files. Used by tests. */
 export async function waitForIdle(): Promise<void> {
-  // One turn first, so a cleanup that a finished run scheduled has started.
+  // A finished run schedules its cleanup for later; wait for scheduled ones too, or a test can look before it started.
   do await new Promise((resolve) => setTimeout(resolve, 20));
-  while (activeRuns.size > 0 || cleanups.size > 0);
+  while (activeRuns.size > 0 || scheduledCleanups.size > 0 || cleanups.size > 0);
 }

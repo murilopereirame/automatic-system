@@ -15,15 +15,15 @@ import type { RunInput, RunInputType } from './types.js';
 export const RUN_INPUT_TYPES: RunInputType[] = ['text', 'textarea', 'number', 'boolean', 'select', 'json'];
 
 /** A name is a path into the trigger payload: identifiers joined by dots. */
-const NAME_PATTERN = /^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/;
+export const NAME_PATTERN = /^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/;
 /** Path segments that would reach into the prototype of the payload object. */
-const FORBIDDEN_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
+export const FORBIDDEN_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
 
 function fail(message: string): never {
   throw new HttpError(400, message);
 }
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+export const isPlainObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** Nothing was given for an input: it is absent, null or an empty text. */
 const isMissing = (value: unknown) => value === undefined || value === null || value === '';
@@ -37,7 +37,7 @@ function readPath(source: Record<string, unknown>, path: string): unknown {
   return current;
 }
 
-function writePath(target: Record<string, unknown>, path: string, value: unknown): void {
+export function writePath(target: Record<string, unknown>, path: string, value: unknown): void {
   const segments = path.split('.');
   const last = segments.pop()!;
   let current = target;

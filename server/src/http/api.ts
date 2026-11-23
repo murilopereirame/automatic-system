@@ -2,7 +2,7 @@
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { planApply } from '../engine/apply-definition.js';
-import { applyDefinition, cancelRun, cleanUpEndedRuns, cleanUpRun, resolveApproval, retryRun, skipStep, startRun } from '../engine/engine.js';
+import { applyDefinition, cancelRun, cleanUpEndedRuns, cleanUpRun, removeRunValue, resolveApproval, retryRun, setPromptOverride, setRunValue, skipStep, startRun } from '../engine/engine.js';
 import { HttpError } from '../errors.js';
 import { applyInputs } from '../inputs.js';
 import { parseDefinition, parseFormula, toFormula } from '../formula.js';
@@ -106,11 +106,12 @@ function attachment(filename: string): string {
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
-/** Runs `action`, turning the engine's "not possible right now" errors into 409 answers. */
+/** Runs `action`, turning the engine's "not possible right now" errors into 409 answers. Errors that already carry a status keep it. */
 function conflictOnError<T>(action: () => T): T {
   try {
     return action();
   } catch (error) {
+    if (error instanceof HttpError) throw error;
     throw new HttpError(409, (error as Error).message);
   }
 }
@@ -333,6 +334,34 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
+  /** Sets the prompt a "Run Claude" block of this run uses instead of the workflow's (see docs/PAUSE_BEFORE.md). */
+  app.put<{ Params: { id: string; stepId: string } }>('/runs/:id/prompts/:stepId', async (request) => {
+    const prompt = (request.body as any)?.prompt;
+    if (typeof prompt !== 'string') throw new HttpError(400, 'prompt must be text');
+    runOr404(request.params.id);
+    return conflictOnError(() => setPromptOverride(request.params.id, request.params.stepId, prompt));
+  });
+
+  /** Goes back to the workflow's prompt for that block. */
+  app.delete<{ Params: { id: string; stepId: string } }>('/runs/:id/prompts/:stepId', async (request) => {
+    runOr404(request.params.id);
+    return conflictOnError(() => setPromptOverride(request.params.id, request.params.stepId, null));
+  });
+
+  /**
+   * Values a person adds to an open run, read by later blocks as `{{vars.<name>}}`.
+   * The body is `{ "value": <any JSON> }`. Answers with all values of the run.
+   */
+  app.put<{ Params: { id: string; name: string }; Body: { value?: unknown } }>('/runs/:id/vars/:name', async (request) => {
+    const run = runOr404(request.params.id);
+    return { vars: conflictOnError(() => setRunValue(run.id, request.params.name, request.body?.value)) };
+  });
+
+  app.delete<{ Params: { id: string; name: string } }>('/runs/:id/vars/:name', async (request) => {
+    const run = runOr404(request.params.id);
+    return { vars: conflictOnError(() => removeRunValue(run.id, request.params.name)) };
+  });
+
   /** Deletes the run's workspace and Claude conversation files. Only for runs that have ended; the run and its log stay. */
   app.post<IdParams>('/runs/:id/cleanup', async (request) => {
     const run = runOr404(request.params.id);
@@ -373,10 +402,11 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
   });
 
   app.post<IdParams>('/approvals/:id/resolve', async (request) => {
-    const { decision, comment } = (request.body ?? {}) as { decision?: string; comment?: string };
+    const { decision, comment, prompt } = (request.body ?? {}) as { decision?: string; comment?: string; prompt?: unknown };
     if (decision !== 'approved' && decision !== 'rejected') throw new HttpError(400, 'decision must be "approved" or "rejected"');
+    if (prompt !== undefined && typeof prompt !== 'string') throw new HttpError(400, 'prompt must be text');
     try {
-      resolveApproval(request.params.id, decision, String(comment ?? ''));
+      resolveApproval(request.params.id, decision, String(comment ?? ''), { prompt });
     } catch (error) {
       throw new HttpError(409, (error as Error).message);
     }

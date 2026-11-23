@@ -58,6 +58,14 @@ const RUN_ONLY_IF: FieldSpec = {
   help: "Optional. The block is skipped when this is false, e.g. steps.tests.output.passed or trigger.task.priority == 'urgent'. Use previous.output for the block above.",
 };
 
+/** `pauseBefore` setting shared by all blocks, stored on the block like `if`. */
+const PAUSE_BEFORE: FieldSpec = {
+  key: 'pauseBefore',
+  label: 'Pause before this block runs',
+  type: 'boolean',
+  help: 'The run waits for you before it starts this block. On a "Run Claude" block you can change the prompt there.',
+};
+
 /** `openId` of the "Run now" block. The colon keeps it apart from block ids, like the prefix of triggers. */
 const RUN_NOW_KEY = 'run-now:';
 
@@ -171,6 +179,7 @@ export function BlockPipeline({ meta, triggers, inputs, steps, secretNames, hook
                       only if <code>{step.if}</code>
                     </span>
                   )}
+                  {step.pauseBefore && <span className="block-condition-note">pauses for you before it runs</span>}
                   {step.type === 'condition' && (
                     <span className="block-condition-note">
                       if <code>{String(step.with.expression ?? '')}</code> → {targetLabel(step.with.then, steps)}, else → {targetLabel(step.with.else, steps)}
@@ -207,6 +216,7 @@ export function BlockPipeline({ meta, triggers, inputs, steps, secretNames, hook
                     </label>
                   </div>
                   <FieldInput field={RUN_ONLY_IF} value={step.if} secretNames={secretNames} earlierSteps={[]} onChange={(value) => update(index, { if: value ? String(value) : undefined })} />
+                  <FieldInput field={PAUSE_BEFORE} value={step.pauseBefore} secretNames={secretNames} earlierSteps={[]} onChange={(value) => update(index, { pauseBefore: value === true || undefined })} />
                   {type.fields.map((field) => (
                     <FieldInput
                       key={field.key}

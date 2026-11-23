@@ -1,4 +1,4 @@
-/** One run: its blocks with their state, the live event log, pending approvals and the web shell. */
+/** One run: its blocks with their state, the live event log, pending approvals, values for upcoming blocks and the web shell. */
 import { useEffect, useRef, useState } from 'react';
 import { api, type Run, type RunDetail, type RunStatus, type StepConfig } from '../api.ts';
 import { ApplyLatestCard } from '../components/ApplyLatestCard.tsx';
@@ -6,6 +6,8 @@ import { ApprovalCard } from '../components/ApprovalCard.tsx';
 import { ErrorNote, PageHeader, StatusBadge, TimeAgo } from '../components/common.tsx';
 import { EventLog } from '../components/EventLog.tsx';
 import { OutputFiles } from '../components/OutputFiles.tsx';
+import { RunPromptCard } from '../components/RunPromptCard.tsx';
+import { RunValuesCard } from '../components/RunValuesCard.tsx';
 import { Terminal } from '../components/Terminal.tsx';
 import { useLive } from '../live.ts';
 import { useRunLog } from '../use-run-log.ts';
@@ -102,6 +104,8 @@ export function RunPage({ runId }: { runId: string }) {
     if (window.confirm(`Skip "${name}" and continue with the next block?${stops} Later blocks will see it as skipped, without an output.`)) act(api.skipStep(run.id));
   };
   const stepOf = (stepId: string): StepConfig | undefined => run.definition.steps.find((step) => step.id === stepId);
+  const pausedBefore = (step: StepConfig) => pending.some((approval) => approval.kind === 'before_step' && approval.stepId === step.id);
+  const selected = selectedStep ? stepOf(selectedStep) : undefined;
 
   return (
     <>
@@ -161,12 +165,14 @@ export function RunPage({ runId }: { runId: string }) {
           <ApprovalCard
             key={approval.id}
             approval={approval}
-            title={step?.name || 'Your approval is needed'}
+            title={approval.kind === 'before_step' ? `Before "${step?.name || approval.stepId}"` : step?.name || 'Your approval is needed'}
             rejectHint={goBack ? `Rejecting sends the run back to "${goBack.name || goBack.id}".` : 'Rejecting stops the run.'}
             onResolved={reload}
           />
         );
       })}
+
+      <RunValuesCard run={run} onChanged={reload} />
 
       {shellOpen && !cleaned && (
         <section className="card shell-card">
@@ -188,7 +194,7 @@ export function RunPage({ runId }: { runId: string }) {
               <button key={step.id} className={`step step-${state}${selectedStep === step.id ? ' selected' : ''}`} onClick={() => setSelectedStep(step.id)}>
                 <span className="step-dot" />
                 <span className="step-name">{step.name || step.id}</span>
-                <span className="step-state">{(state === 'done' && conditionOutcome(run, step)) || STATE_LABEL[state]}</span>
+                <span className="step-state">{(state === 'done' && conditionOutcome(run, step)) || (state === 'waiting' && pausedBefore(step) && 'Paused before start') || STATE_LABEL[state]}</span>
               </button>
             );
           })}
@@ -202,6 +208,7 @@ export function RunPage({ runId }: { runId: string }) {
               <span>Follow</span>
             </label>
           </header>
+          {selected?.type === 'claude' && run.status !== 'succeeded' && <RunPromptCard run={run} step={selected} onSaved={reload} />}
           <ErrorNote message={logError} />
           {log.hasOlder && (
             <div className="log-older">

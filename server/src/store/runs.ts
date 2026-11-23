@@ -168,7 +168,9 @@ interface ApprovalRow {
   id: string;
   run_id: string;
   step_id: string;
+  kind: Approval['kind'];
   message: string;
+  data: string;
   status: Approval['status'];
   comment: string | null;
   created_at: string;
@@ -180,7 +182,9 @@ function approvalFromRow(row: ApprovalRow): Approval {
     id: row.id,
     runId: row.run_id,
     stepId: row.step_id,
+    kind: row.kind,
     message: row.message,
+    data: JSON.parse(row.data),
     status: row.status,
     comment: row.comment ?? undefined,
     createdAt: row.created_at,
@@ -188,13 +192,15 @@ function approvalFromRow(row: ApprovalRow): Approval {
   };
 }
 
-export function createApproval(runId: string, stepId: string, message: string): Approval {
+export function createApproval(runId: string, stepId: string, message: string, kind: Approval['kind'] = 'approval', data: Record<string, unknown> = {}): Approval {
   const id = randomUUID();
-  db.prepare("INSERT INTO approvals (id, run_id, step_id, message, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)").run(
+  db.prepare("INSERT INTO approvals (id, run_id, step_id, kind, message, data, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)").run(
     id,
     runId,
     stepId,
+    kind,
     message,
+    JSON.stringify(data),
     now(),
   );
   return getApproval(id)!;

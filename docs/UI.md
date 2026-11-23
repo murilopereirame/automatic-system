@@ -84,6 +84,19 @@ same payload under **Triggered**. Inputs are described in
 - A pending approval appears on top. Approve to continue. Reject with a
   comment to send the run back to an earlier block with your comment as
   feedback for Claude, when the block is configured that way.
+- A block with **Pause before this block runs** stops the run before it
+  starts. On a **Run Claude** block the pause shows the prompt with its
+  templates filled in: change it and press **Run block**, or **Stop run**.
+  Clicking a **Run Claude** block in the list also shows **Prompt for this
+  run**, to replace its prompt for this run at any time. See
+  [PAUSE_BEFORE.md](PAUSE_BEFORE.md).
+
+  ![A run paused before a Claude block](images/pause-before-claude.png)
+- **Values for upcoming blocks** adds values to the run while it is open, such
+  as the URL of the staging deploy you just made. Blocks that start afterwards
+  read them as `{{vars.<name>}}`. See [RUN-VALUES.md](RUN-VALUES.md).
+
+  ![Values for upcoming blocks](images/run-values.png)
 - **Skip "block name"** passes over the block the run is at and continues with
   the next one. Use it when a block is stuck or not needed this time. It is
   there while the block runs (what it is doing is stopped), waits for you, or

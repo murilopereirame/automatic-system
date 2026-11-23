@@ -137,6 +137,9 @@ export const api = {
   cancelRun: (id: string) => request('POST', `/runs/${id}/cancel`, {}),
   retryRun: (id: string) => request('POST', `/runs/${id}/retry`, {}),
   skipStep: (id: string) => request('POST', `/runs/${id}/skip`, {}),
+  /** Adds or replaces a value later blocks read as `{{vars.<name>}}`. See server/src/run-values.ts. */
+  setRunValue: (id: string, name: string, value: unknown) => request<{ vars: Record<string, unknown> }>('PUT', `/runs/${id}/vars/${encodeURIComponent(name)}`, { value }),
+  removeRunValue: (id: string, name: string) => request<{ vars: Record<string, unknown> }>('DELETE', `/runs/${id}/vars/${encodeURIComponent(name)}`),
   /** Deletes the files of a run that has ended. The run and its log stay. */
   cleanUpRun: (id: string) => request<Run>('POST', `/runs/${id}/cleanup`, {}),
   /** Cleans up every ended run whose files are still there, optionally only those of one workflow. */
@@ -147,8 +150,12 @@ export const api = {
   applyToRuns: (workflowId: string) => request<{ runId: string; deferred: boolean }[]>('POST', `/workflows/${workflowId}/apply-to-runs`, {}),
 
   pendingApprovals: () => request<PendingApproval[]>('GET', '/approvals?status=pending'),
-  resolveApproval: (id: string, decision: 'approved' | 'rejected', comment: string) =>
-    request('POST', `/approvals/${id}/resolve`, { decision, comment }),
+  /** `prompt` answers a pause before a "Run Claude" block with the prompt to send instead. */
+  resolveApproval: (id: string, decision: 'approved' | 'rejected', comment: string, prompt?: string) =>
+    request('POST', `/approvals/${id}/resolve`, { decision, comment, prompt }),
+  /** The prompt a "Run Claude" block of this run uses instead of the workflow's. See docs/PAUSE_BEFORE.md. */
+  setRunPrompt: (runId: string, stepId: string, prompt: string) => request<Run>('PUT', `/runs/${runId}/prompts/${stepId}`, { prompt }),
+  clearRunPrompt: (runId: string, stepId: string) => request<Run>('DELETE', `/runs/${runId}/prompts/${stepId}`),
 
   secrets: () => request<string[]>('GET', '/secrets'),
   setSecret: (name: string, value: string) => request('PUT', `/secrets/${name}`, { value }),

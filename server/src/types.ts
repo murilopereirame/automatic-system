@@ -57,6 +57,12 @@ export interface StepConfig {
   name?: string;
   /** Expression. When it is set and false, the run skips this block. */
   if?: string;
+  /**
+   * When true, the run stops before this block and waits until a person lets
+   * it run (see docs/PAUSE_BEFORE.md). On a "Run Claude" block the person can
+   * edit the prompt there.
+   */
+  pauseBefore?: boolean;
   with: Record<string, unknown>;
 }
 
@@ -206,7 +212,7 @@ export interface WorkflowVersion {
 export type RunStatus = 'queued' | 'running' | 'waiting' | 'succeeded' | 'failed' | 'cancelled';
 
 /** Top-level names the templates and expressions of a block can use. The engine provides them (see `scopeFor` in engine/engine.ts). */
-export const SCOPE_NAMES = ['trigger', 'triggeredBy', 'steps', 'previous', 'run', 'repo', 'repos'] as const;
+export const SCOPE_NAMES = ['trigger', 'triggeredBy', 'steps', 'previous', 'run', 'repo', 'repos', 'vars'] as const;
 
 export interface RepoContext {
   url: string;
@@ -235,8 +241,25 @@ export interface RunContext {
   claudeSessionId?: string;
   /** Folder the Claude conversation belongs to. Claude Code can only resume a conversation from the folder it started in. */
   claudeSessionDir?: string;
+  /**
+   * Values a person added to the run while it was open (see run-values.ts).
+   * Dotted names nest: `staging.url` is read as `{{vars.staging.url}}`.
+   */
+  vars?: Record<string, unknown>;
   /** Reviewer comment from a rejected approval, consumed by the next Claude step. */
   feedback?: string;
+  /**
+   * Prompts a person set on the run page for "Run Claude" blocks of this run, by block id.
+   * Templates like the workflow's prompt. Used every time the block runs, until cleared.
+   */
+  promptOverrides?: Record<string, string>;
+  /**
+   * The exact prompt a person confirmed when the run paused before a "Run Claude" block, by block id.
+   * Used once, by the next start of that block, and then removed.
+   */
+  promptOnce?: Record<string, string>;
+  /** The block a person let run after it paused before it. Removed when that block starts. */
+  released?: string;
 }
 
 export interface Run {
@@ -284,11 +307,20 @@ export interface RunEvent {
   createdAt: string;
 }
 
+/**
+ * `approval`: a "Wait for approval" block asks for a decision.
+ * `before_step`: the run paused before a block that has `pauseBefore` set.
+ */
+export type ApprovalKind = 'approval' | 'before_step';
+
 export interface Approval {
   id: string;
   runId: string;
   stepId: string;
+  kind: ApprovalKind;
   message: string;
+  /** What the person is shown to check, e.g. `{ prompt }` for a "Run Claude" block. */
+  data: Record<string, unknown>;
   status: 'pending' | 'approved' | 'rejected';
   comment?: string;
   createdAt: string;

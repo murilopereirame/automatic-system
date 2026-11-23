@@ -65,6 +65,7 @@ steps:                       # the blocks, in order
     type: claude
     name: Implement the task
     if: "trigger.task.status != 'done'"   # optional condition
+    pauseBefore: true                     # optional: wait for me, and let me edit the prompt
     with: { prompt: "..." }
 
 history: []                  # earlier versions, only in "Export with history"
@@ -85,6 +86,7 @@ Text settings may contain `{{ path }}` placeholders.
 | `{{run.outputDir}}` | The run's output folder for files you download from the run page ([OUTPUTS.md](OUTPUTS.md)). Also `$AUTOWORKER_OUTPUT_DIR` in commands |
 | `{{repo.branch}}`, `{{repo.baseBranch}}`, `{{repo.owner}}`, `{{repo.name}}` | Set by the first clone block |
 | `{{repos.<folder>.branch}}`, `.baseBranch`, `.owner`, `.name`, `.dir` | Every clone, by the folder it was cloned into, e.g. `{{repos.frontend.branch}}` |
+| `{{vars...}}` | Values added to the run from the run page while it is open, e.g. `{{vars.staging.url}}`. See [RUN-VALUES.md](RUN-VALUES.md) |
 
 Unknown placeholders render as empty text.
 
@@ -336,7 +338,9 @@ cancelled). Runs can always be cleaned up by hand. See [CLEANUP.md](CLEANUP.md).
 Every block has an `id` (unique, used in templates), a `type`, an optional
 `name` and its settings under `with`. A block may also have an `if`
 expression: when it is false the run skips the block. See
-[EXPRESSIONS.md](EXPRESSIONS.md).
+[EXPRESSIONS.md](EXPRESSIONS.md). With `pauseBefore: true` the run waits for
+you before the block starts; on a `claude` block you can edit the prompt
+there. See [PAUSE_BEFORE.md](PAUSE_BEFORE.md).
 
 | Type | What it does | Output |
 |------|--------------|--------|

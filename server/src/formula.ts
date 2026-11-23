@@ -124,7 +124,14 @@ function parseSteps(input: unknown): StepConfig[] {
     if (ids.has(id)) invalid(`step id "${id}" is used more than once`);
     ids.add(id);
     const condition = raw.if === undefined || raw.if === null || String(raw.if).trim() === '' ? undefined : String(raw.if);
-    return { id, type, name: raw.name ? String(raw.name) : undefined, ...(condition !== undefined && { if: condition }), with: asObject(raw.with, `settings of step "${id}"`) };
+    return {
+      id,
+      type,
+      name: raw.name ? String(raw.name) : undefined,
+      ...(condition !== undefined && { if: condition }),
+      ...(raw.pauseBefore === true && { pauseBefore: true }),
+      with: asObject(raw.with, `settings of step "${id}"`),
+    };
   });
   for (const step of steps) checkStepSettings(step, ids);
   return steps;

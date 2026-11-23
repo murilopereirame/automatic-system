@@ -103,11 +103,13 @@ All routes under `/api` need the session cookie or `Authorization: Bearer <token
 | `GET /api/runs/:id/events` | The run's log, newest page first: `{ events, hasOlder }`. `?before=<event id>` pages back, `?stepId=` keeps one block, `?limit=` (default 300, max 1000) |
 | `GET /api/runs/:id/outputs`, `GET /api/runs/:id/outputs/file?path=`, `GET /api/runs/:id/outputs/archive` | Files in the run's output folder; one file, or all as `.tar.gz` ([OUTPUTS.md](OUTPUTS.md)) |
 | `POST /api/runs/:id/cancel`, `POST /api/runs/:id/retry`, `POST /api/runs/:id/skip` | Control a run: stop it, continue from the block it stopped at, or pass over that block |
+| `PUT /api/runs/:id/vars/:name`, `DELETE /api/runs/:id/vars/:name` | Add (body `{ "value": ... }`) or remove a value later blocks read as `{{vars.<name>}}`. Answers with all values of the run. See [RUN-VALUES.md](RUN-VALUES.md) |
 | `POST /api/runs/:id/cleanup`, `POST /api/runs/cleanup` | Delete the files of one ended run, or of every ended run ([CLEANUP.md](CLEANUP.md)) |
 | `GET /api/runs/:id/apply-latest`, `POST /api/runs/:id/apply-latest` | Preview, or apply, switching a run to the saved workflow. `GET /api/runs/:id` says `outdated: true` when there is something to apply |
 | `GET /api/workflows/:id/outdated-runs`, `POST /api/workflows/:id/apply-to-runs` | Open runs still on an older definition, and applying the saved one to all of them |
+| `PUT/DELETE /api/runs/:id/prompts/:stepId` | Set or clear the prompt a Claude block uses in this run. See [PAUSE_BEFORE.md](PAUSE_BEFORE.md#api) |
 | `GET /api/stream` | Server-sent events with live run updates |
-| `GET /api/approvals?status=pending`, `POST /api/approvals/:id/resolve` | Inbox |
+| `GET /api/approvals?status=pending`, `POST /api/approvals/:id/resolve` | Inbox. Resolving a pause before a Claude block can carry an edited `prompt` |
 | `GET /api/secrets`, `PUT/DELETE /api/secrets/:name` | Secrets (names only on read) |
 | `GET/PUT /api/settings` | Commit author of everything a run commits |
 | `WS /api/shell?runId=` | Web shell |
