@@ -118,6 +118,10 @@ function describe(event: RunEvent): { label: string; tone?: string; body: ReactN
       const versions = typeof data.toVersion === 'number' ? ` (${typeof data.fromVersion === 'number' ? `v${data.fromVersion} → ` : ''}v${data.toVersion})` : '';
       return { label: `Workflow edits applied${versions}`, tone: 'heading', body: `${summary}. Continues with ${data.continueAt ?? 'the end of the run'}.` };
     }
+    case 'value_set':
+      return { label: data.replaced ? 'Value changed' : 'Value added', body: <><code>{`vars.${data.name}`}</code> = <LongText text={typeof data.value === 'string' ? data.value : json(data.value)} /></> };
+    case 'value_removed':
+      return { label: 'Value removed', body: <code>{`vars.${data.name}`}</code> };
     case 'retried':
       return { label: 'Retried', body: `from block ${data.fromStep}` };
     case 'workspace_cleaned': {

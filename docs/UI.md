@@ -92,6 +92,11 @@ same payload under **Triggered**. Inputs are described in
   [PAUSE_BEFORE.md](PAUSE_BEFORE.md).
 
   ![A run paused before a Claude block](images/pause-before-claude.png)
+- **Values for upcoming blocks** adds values to the run while it is open, such
+  as the URL of the staging deploy you just made. Blocks that start afterwards
+  read them as `{{vars.<name>}}`. See [RUN-VALUES.md](RUN-VALUES.md).
+
+  ![Values for upcoming blocks](images/run-values.png)
 - **Skip "block name"** passes over the block the run is at and continues with
   the next one. Use it when a block is stuck or not needed this time. It is
   there while the block runs (what it is doing is stopped), waits for you, or

@@ -91,6 +91,7 @@ run stopped at.
 | `run` | `run.id` |
 | `repo` | `repo.branch`, `repo.baseBranch`, `repo.owner`, `repo.name`, once a clone block ran |
 | `repos` | Every clone by its folder: `repos.frontend.branch`, `repos.backend.baseBranch`, ... |
+| `vars` | Values added to the run from the run page, e.g. `vars.staging.url` (see [RUN-VALUES.md](RUN-VALUES.md)) |
 
 What a block puts in its output is listed in the block table of
 [FORMULA.md](FORMULA.md#blocks). A value that does not exist is `null`, not an
@@ -170,7 +171,7 @@ flowchart LR
     S["source text<br/>steps.tests.output.passed"] --> P[parser<br/>expression.ts]
     P --> T[tree of values,<br/>operators and calls]
     T --> E[interpreter]
-    V[(trigger, steps,<br/>previous, run, repo)] --> E
+    V[(trigger, steps,<br/>previous, run, repo, vars)] --> E
     E --> R[result]
 ```
 

@@ -1,7 +1,7 @@
 /** JSON API used by the web UI. Every route here requires authentication. */
 import type { FastifyInstance } from 'fastify';
 import { planApply } from '../engine/apply-definition.js';
-import { applyDefinition, cancelRun, cleanUpEndedRuns, cleanUpRun, resolveApproval, retryRun, setPromptOverride, skipStep, startRun } from '../engine/engine.js';
+import { applyDefinition, cancelRun, cleanUpEndedRuns, cleanUpRun, removeRunValue, resolveApproval, retryRun, setPromptOverride, setRunValue, skipStep, startRun } from '../engine/engine.js';
 import { HttpError } from '../errors.js';
 import { applyInputs } from '../inputs.js';
 import { parseDefinition, parseFormula, toFormula } from '../formula.js';
@@ -98,11 +98,12 @@ function outdatedRuns(workflow: Workflow): Run[] {
   return runs.listRuns({ workflowId: workflow.id, limit: 1000 }).filter((run) => OPEN_STATUSES.has(run.status) && isOutdated(run, workflow));
 }
 
-/** Runs `action`, turning the engine's "not possible right now" errors into 409 answers. */
+/** Runs `action`, turning the engine's "not possible right now" errors into 409 answers. Errors that already carry a status keep it. */
 function conflictOnError<T>(action: () => T): T {
   try {
     return action();
   } catch (error) {
+    if (error instanceof HttpError) throw error;
     throw new HttpError(409, (error as Error).message);
   }
 }
@@ -310,6 +311,20 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
   app.delete<{ Params: { id: string; stepId: string } }>('/runs/:id/prompts/:stepId', async (request) => {
     runOr404(request.params.id);
     return conflictOnError(() => setPromptOverride(request.params.id, request.params.stepId, null));
+  });
+
+  /**
+   * Values a person adds to an open run, read by later blocks as `{{vars.<name>}}`.
+   * The body is `{ "value": <any JSON> }`. Answers with all values of the run.
+   */
+  app.put<{ Params: { id: string; name: string }; Body: { value?: unknown } }>('/runs/:id/vars/:name', async (request) => {
+    const run = runOr404(request.params.id);
+    return { vars: conflictOnError(() => setRunValue(run.id, request.params.name, request.body?.value)) };
+  });
+
+  app.delete<{ Params: { id: string; name: string } }>('/runs/:id/vars/:name', async (request) => {
+    const run = runOr404(request.params.id);
+    return { vars: conflictOnError(() => removeRunValue(run.id, request.params.name)) };
   });
 
   /** Deletes the run's workspace and Claude conversation files. Only for runs that have ended; the run and its log stay. */

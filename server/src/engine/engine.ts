@@ -22,6 +22,9 @@
  * A run keeps its own copy of the workflow definition. `applyDefinition`
  * switches that copy to a newer one (see apply-definition.ts).
  *
+ * A person can add values to an open run with `setRunValue`. Blocks that run
+ * after that read them as `vars.<name>` (see run-values.ts).
+ *
  * Once a run has ended, `cleanUpRun` deletes its files (see cleanup.ts), on
  * its own when the workflow's cleanup setting says so, or when a person asks.
  */
@@ -38,6 +41,7 @@ import { getStepType } from '../steps/index.js';
 import { planApply, type ApplyPlan } from './apply-definition.js';
 import { cleansUpAutomatically, removeRunFiles } from './cleanup.js';
 import { text, type StepRuntime } from '../steps/types.js';
+import { listValues, withoutValue, withValue } from '../run-values.js';
 import { renderDeep } from '../template.js';
 import { MANUAL_TRIGGER, type Approval, type ApprovalKind, type Run, type SCOPE_NAMES, type StepConfig, type TriggerRef, type Workflow, type WorkflowDefinition } from '../types.js';
 
@@ -47,7 +51,7 @@ import { MANUAL_TRIGGER, type Approval, type ApprovalKind, type Run, type SCOPE_
  * the current step is done (a step is never changed while it runs).
  */
 interface ActiveRun {
-  /** The run object the engine executes and saves. Changes made from outside while it runs must go to this object, or its next save overwrites them. */
+  /** The run object the engine executes and saves. Changes from outside while it runs (injected values, prompt edits) go here, or its next save would undo them. */
   run: Run;
   controller: AbortController;
   skipRequested: boolean;
@@ -182,6 +186,7 @@ function scopeFor(run: Run): Record<(typeof SCOPE_NAMES)[number], unknown> {
     run: { id: run.id },
     repo: context.repo,
     repos: context.repos,
+    vars: context.vars ?? {},
   };
 }
 
@@ -507,6 +512,48 @@ function switchDefinition(run: Run, definition: WorkflowDefinition, version: num
   run.stepIndex = plan.continueIndex;
   runs.addEvent(run.id, null, 'definition_applied', { blocks: plan.blocks, sections: plan.sections, continueAt: plan.continueAt, fromVersion, toVersion: version });
   return plan;
+}
+
+/** Runs that can still use a value: everything but a run that has finished successfully. */
+const ACCEPTS_VALUES = new Set<Run['status']>(['queued', 'running', 'waiting', 'failed', 'cancelled']);
+
+/**
+ * The run to change from outside the loop: the loop's own object while the
+ * run executes, so the change is not overwritten by its next save, otherwise
+ * the stored run.
+ */
+function runToChange(runId: string): Run {
+  const run = activeRuns.get(runId)?.run ?? runs.getRun(runId);
+  if (!run) throw new Error('Run not found');
+  if (!ACCEPTS_VALUES.has(run.status)) throw new Error('This run has finished. Values can only be added to a run that is still open.');
+  if (run.cleanedAt) throw new Error('The files of this run were cleaned up, so it cannot continue. Start a new run instead.');
+  return run;
+}
+
+/**
+ * Adds a value to an open run, or replaces it. Blocks that start after this
+ * read it as `vars.<name>`. A block that is running right now does not see it:
+ * its settings were filled in when it started.
+ */
+export function setRunValue(runId: string, name: string, value: unknown): Record<string, unknown> {
+  const run = runToChange(runId);
+  const vars = withValue(run.context.vars, name, value);
+  const replaced = listValues(run.context.vars).some(([existing]) => existing === name);
+  run.context.vars = vars;
+  runs.saveRun(run);
+  runs.addEvent(run.id, null, 'value_set', { name, value, replaced, atStep: run.definition.steps[run.stepIndex]?.id ?? null });
+  return vars;
+}
+
+/** Removes a value a person added. Blocks that start after this read it as empty. */
+export function removeRunValue(runId: string, name: string): Record<string, unknown> {
+  const run = runToChange(runId);
+  const { vars, removed } = withoutValue(run.context.vars, name);
+  if (!removed) throw new Error(`This run has no value named "${name}"`);
+  run.context.vars = vars;
+  runs.saveRun(run);
+  runs.addEvent(run.id, null, 'value_removed', { name });
+  return vars;
 }
 
 /** Called once at startup: runs that were executing when the server stopped cannot continue on their own. */

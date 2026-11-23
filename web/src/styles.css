@@ -703,6 +703,46 @@ pre.code {
   margin-top: 12px;
 }
 
+/* ---- Values for upcoming blocks ---------------------------------------- */
+
+.run-values {
+  border-left: 4px solid var(--accent);
+  margin-bottom: 12px;
+}
+
+.run-values header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.run-values-list {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 4px;
+}
+
+.run-values-list td {
+  padding: 6px 8px 6px 0;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.run-values-list .run-value {
+  width: 100%;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.run-values-list .actions {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
 /* ---- Applying workflow edits to runs ----------------------------------- */
 
 .apply-latest {

@@ -212,7 +212,7 @@ export interface WorkflowVersion {
 export type RunStatus = 'queued' | 'running' | 'waiting' | 'succeeded' | 'failed' | 'cancelled';
 
 /** Top-level names the templates and expressions of a block can use. The engine provides them (see `scopeFor` in engine/engine.ts). */
-export const SCOPE_NAMES = ['trigger', 'triggeredBy', 'steps', 'previous', 'run', 'repo', 'repos'] as const;
+export const SCOPE_NAMES = ['trigger', 'triggeredBy', 'steps', 'previous', 'run', 'repo', 'repos', 'vars'] as const;
 
 export interface RepoContext {
   url: string;
@@ -241,6 +241,11 @@ export interface RunContext {
   claudeSessionId?: string;
   /** Folder the Claude conversation belongs to. Claude Code can only resume a conversation from the folder it started in. */
   claudeSessionDir?: string;
+  /**
+   * Values a person added to the run while it was open (see run-values.ts).
+   * Dotted names nest: `staging.url` is read as `{{vars.staging.url}}`.
+   */
+  vars?: Record<string, unknown>;
   /** Reviewer comment from a rejected approval, consumed by the next Claude step. */
   feedback?: string;
   /**

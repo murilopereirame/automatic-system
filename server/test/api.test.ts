@@ -183,6 +183,25 @@ test('the web shell runs commands as the agent and refuses anonymous connections
   shell.close();
 });
 
+test('values can be added to and removed from an open run through the API', async () => {
+  const gated = { ...definition, triggers: [], steps: [{ id: 'gate', type: 'approval', with: { message: 'Add the URL' } }] };
+  const workflow = (await app.inject({ method: 'POST', url: '/api/workflows', headers: auth, payload: { name: 'Values', definition: gated } })).json();
+  const run = (await app.inject({ method: 'POST', url: `/api/workflows/${workflow.id}/run`, headers: auth, payload: {} })).json();
+  await waitForIdle();
+
+  const put = (name: string, payload: unknown) => app.inject({ method: 'PUT', url: `/api/runs/${run.id}/vars/${name}`, headers: auth, payload: payload as object });
+  const set = await put('staging.url', { value: 'https://staging.example.com' });
+  assert.equal(set.statusCode, 200);
+  assert.deepEqual(set.json(), { vars: { staging: { url: 'https://staging.example.com' } } });
+  assert.equal((await put('bad-name', { value: 1 })).statusCode, 400);
+  assert.equal((await put('nothing', {})).statusCode, 400);
+
+  const removed = await app.inject({ method: 'DELETE', url: `/api/runs/${run.id}/vars/staging.url`, headers: auth });
+  assert.deepEqual(removed.json(), { vars: {} });
+  assert.equal((await app.inject({ method: 'DELETE', url: `/api/runs/${run.id}/vars/staging.url`, headers: auth })).statusCode, 409);
+  assert.equal((await app.inject({ method: 'PUT', url: '/api/runs/nope/vars/x', headers: auth, payload: { value: 1 } })).statusCode, 404);
+});
+
 test('a finished run can be cleaned up through the API, one at a time or all at once', async () => {
   const created = await app.inject({ method: 'POST', url: '/api/workflows', headers: auth, payload: { name: 'Cleanup API', definition: { steps: [{ id: 'touch', type: 'shell', with: { command: 'touch x' } }] } } });
   const workflow = created.json();

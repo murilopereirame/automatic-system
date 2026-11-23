@@ -133,6 +133,9 @@ export const api = {
   cancelRun: (id: string) => request('POST', `/runs/${id}/cancel`, {}),
   retryRun: (id: string) => request('POST', `/runs/${id}/retry`, {}),
   skipStep: (id: string) => request('POST', `/runs/${id}/skip`, {}),
+  /** Adds or replaces a value later blocks read as `{{vars.<name>}}`. See server/src/run-values.ts. */
+  setRunValue: (id: string, name: string, value: unknown) => request<{ vars: Record<string, unknown> }>('PUT', `/runs/${id}/vars/${encodeURIComponent(name)}`, { value }),
+  removeRunValue: (id: string, name: string) => request<{ vars: Record<string, unknown> }>('DELETE', `/runs/${id}/vars/${encodeURIComponent(name)}`),
   /** Deletes the files of a run that has ended. The run and its log stay. */
   cleanUpRun: (id: string) => request<Run>('POST', `/runs/${id}/cleanup`, {}),
   /** Cleans up every ended run whose files are still there, optionally only those of one workflow. */
