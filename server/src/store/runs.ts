@@ -19,6 +19,7 @@ interface RunRow {
   context: string;
   workspace: string;
   workflow_version: number | null;
+  cleaned_at: string | null;
   error: string | null;
   created_at: string;
   updated_at: string;
@@ -35,6 +36,7 @@ function runFromRow(row: RunRow): Run {
     ...(row.workflow_version !== null && { workflowVersion: row.workflow_version }),
     context: JSON.parse(row.context),
     workspace: row.workspace,
+    ...(row.cleaned_at !== null && { cleanedAt: row.cleaned_at }),
     error: row.error ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -88,6 +90,22 @@ export function saveRun(run: Run): void {
     run.id,
   );
   runUpdates.emit('run', run);
+}
+
+/** Records that a run's files were deleted. Kept apart from `saveRun`, so a stale copy of the run can never undo it. */
+export function markCleaned(runId: string): Run | undefined {
+  db.prepare('UPDATE runs SET cleaned_at = ? WHERE id = ? AND cleaned_at IS NULL').run(now(), runId);
+  const run = getRun(runId);
+  if (run) runUpdates.emit('run', run);
+  return run;
+}
+
+/** Finished runs whose files are still on disk, optionally of one workflow. */
+export function listUncleanedFinishedRuns(workflowId?: string): Run[] {
+  const rows = db
+    .prepare("SELECT * FROM runs WHERE cleaned_at IS NULL AND status IN ('succeeded', 'failed', 'cancelled') AND (?1 IS NULL OR workflow_id = ?1) ORDER BY created_at")
+    .all(workflowId ?? null);
+  return (rows as unknown as RunRow[]).map(runFromRow);
 }
 
 interface EventRow {

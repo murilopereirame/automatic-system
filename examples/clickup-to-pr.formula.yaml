@@ -99,6 +99,11 @@ notifications:
       Click: "{{run.url}}"
     body: "{{message}}"
 
+# Delete the workspace and Claude's conversation once the pull request is open.
+# Failed runs keep their files, so they can be looked at and retried.
+cleanup:
+  when: succeeded
+
 steps:
   - id: notify_start
     type: notify

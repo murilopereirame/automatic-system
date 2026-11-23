@@ -57,6 +57,9 @@ notifications:               # webhook calls
     url: "https://ntfy.sh/{{secrets.NTFY_TOPIC | url}}"
     body: "{{message}}"
 
+cleanup:                     # when a run's files are deleted, optional
+  when: succeeded            # never (default) | succeeded | finished
+
 steps:                       # the blocks, in order
   - id: implement
     type: claude
@@ -319,6 +322,13 @@ notifications:
     method: GET
     url: "https://api.telegram.org/bot{{secrets.TELEGRAM_TOKEN}}/sendMessage?chat_id={{secrets.TELEGRAM_CHAT}}&text={{message | url}}"
 ```
+
+## Cleanup
+
+`cleanup.when` decides whether the files of a run (its workspace and Claude's
+conversation) are deleted when the run ends: `never` (the default, also for
+formulas without `cleanup`), `succeeded`, or `finished` (succeeded, failed or
+cancelled). Runs can always be cleaned up by hand. See [CLEANUP.md](CLEANUP.md).
 
 ## Blocks
 
