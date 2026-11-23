@@ -5,6 +5,7 @@ import { ApplyLatestCard } from '../components/ApplyLatestCard.tsx';
 import { ApprovalCard } from '../components/ApprovalCard.tsx';
 import { ErrorNote, PageHeader, StatusBadge, TimeAgo } from '../components/common.tsx';
 import { EventLog } from '../components/EventLog.tsx';
+import { OutputFiles } from '../components/OutputFiles.tsx';
 import { Terminal } from '../components/Terminal.tsx';
 import { useLive } from '../live.ts';
 import { useRunLog } from '../use-run-log.ts';
@@ -170,7 +171,7 @@ export function RunPage({ runId }: { runId: string }) {
       {shellOpen && !cleaned && (
         <section className="card shell-card">
           <p className="muted">
-            Shell in <code>{run.context.workdir ?? run.workspace}</code>, as the same user and with the same environment as Claude.
+            Shell in <code>{run.context.workdir ?? run.workspace}</code>, as the same user and with the same environment as Claude. Copy files you want to download to <code>$AUTOWORKER_OUTPUT_DIR</code>.
           </p>
           <Terminal runId={run.id} />
         </section>
@@ -211,6 +212,8 @@ export function RunPage({ runId }: { runId: string }) {
           <div ref={logEnd} />
         </section>
       </div>
+
+      <OutputFiles run={run} />
     </>
   );
 }

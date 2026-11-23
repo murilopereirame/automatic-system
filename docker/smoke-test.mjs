@@ -44,6 +44,9 @@ async function waitForServer() {
  * Runs a shell command as a workflow step and returns its output. `allow` is the
  * workflow's network allow list, `runtimes` the language runtimes it asks for.
  */
+/** Id of the run `runInSandbox` started last, for checks of its output folder. */
+let lastRunId;
+
 async function runInSandbox(command, allow = [], runtimes = []) {
   const definition = {
     trigger: { type: 'manual', with: {} },
@@ -54,6 +57,7 @@ async function runInSandbox(command, allow = [], runtimes = []) {
   // Runtimes are downloaded before the first step. The gateway picks up a new allow list within a few seconds.
   if (runtimes.length > 0) await new Promise((resolve) => setTimeout(resolve, 7000));
   const started = await api('POST', `/workflows/${workflow.id}/run`, {});
+  lastRunId = started.id;
   for (let attempt = 0; attempt < 360; attempt += 1) {
     const { run } = await api('GET', `/runs/${started.id}`);
     if (run.status === 'succeeded') return run.context.steps.probe.output.output;
@@ -90,6 +94,9 @@ env | grep -qE 'AUTOWORKER_(TOKEN|SECRET_KEY|GATEWAY_SECRET)' && echo TOKEN_LEAK
 cat /proc/[0-9]*/environ 2>/dev/null | grep -qaE 'AUTOWORKER_(TOKEN|SECRET_KEY|GATEWAY_SECRET)' && echo TOKEN_LEAKED
 pwd
 echo "path=$PATH"
+echo "outputs=$AUTOWORKER_OUTPUT_DIR"
+echo smoke > "$AUTOWORKER_OUTPUT_DIR/smoke.txt" && echo OUTPUT_WRITABLE
+ln -s /data/autoworker.db "$AUTOWORKER_OUTPUT_DIR/database"
 `;
 
 /** Where mise puts the runtimes a formula asks for. It has to come first on PATH. */
@@ -113,6 +120,12 @@ check('no Docker socket is mounted', !probe.includes('DOCKER_SOCKET_PRESENT'), p
 check('the server secrets are not readable from the agent, directly or through /proc', !probe.includes('TOKEN_LEAKED'), probe);
 check('the agent home and /tmp are writable', probe.includes('HOME_WRITABLE') && probe.includes('TMP_WRITABLE'), probe);
 check('commands start in the run workspace', /^\/workspaces\//m.test(probe), probe);
+
+check('runs get a writable output folder outside the workspaces', line('outputs') === `/outputs/${lastRunId}` && probe.includes('OUTPUT_WRITABLE'), probe);
+const outputs = await api('GET', `/runs/${lastRunId}/outputs`);
+check('the output folder lists the file, but not the link to the database', JSON.stringify(outputs.files.map((file) => file.path)) === '["smoke.txt"]', JSON.stringify(outputs));
+const linked = await fetch(`${baseUrl}/api/runs/${lastRunId}/outputs/file?path=database`, { headers });
+check('a link in the output folder cannot download the database', linked.status === 404, `answered ${linked.status}`);
 
 check('workflow commands look for the formula runtimes first', line('path')?.startsWith(`${RUNTIME_SHIMS}:`), probe);
 

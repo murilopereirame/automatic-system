@@ -107,6 +107,12 @@ same payload under **Triggered**. Inputs are described in
 - **Open shell** starts a terminal in the run's workspace, as the same user
   and with the same environment as Claude. Use it to inspect the work or run
   git commands while the run waits for you.
+- **Output files** under the log lists what the run put in its output folder
+  (`$AUTOWORKER_OUTPUT_DIR`), newest first, with a download link for each and
+  **Download all (.tar.gz)**. The folder is outside the repository, so this is
+  how screenshots, reports and artifacts get out of the container. See
+  [OUTPUTS.md](OUTPUTS.md).
+  ![Output files of a run](images/run-outputs.png)
 - Long runs show their newest activity first. **Load older activity** at the
   top of the log brings back earlier entries, a page at a time. Very long
   output or tool results show their last (or first) 20,000 characters, with

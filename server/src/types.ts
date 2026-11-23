@@ -259,6 +259,22 @@ export interface Run {
   updatedAt: string;
 }
 
+/** A file in a run's output folder (see sandbox/outputs.ts). */
+export interface OutputFile {
+  /** Path relative to the output folder, with `/` separators. */
+  path: string;
+  size: number;
+  modifiedAt: string;
+}
+
+export interface OutputListing {
+  /** Absolute path of the folder inside the container. */
+  dir: string;
+  files: OutputFile[];
+  /** More files exist than were listed. */
+  truncated: boolean;
+}
+
 export interface RunEvent {
   id: number;
   runId: string;

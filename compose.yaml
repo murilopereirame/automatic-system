@@ -44,6 +44,11 @@ services:
     volumes:
       - data:/data                 # database and encrypted secrets (server only)
       - workspaces:/workspaces     # run workspaces
+      # Files runs leave for you, one folder per run (see docs/OUTPUTS.md). To get
+      # them on the host directly, replace the volume with a dedicated, empty host
+      # folder owned by uid 10001, e.g. `./outputs:/outputs`. Never mount a folder
+      # that holds anything else: the agent can write to everything in it.
+      - outputs:/outputs
       - agent-home:/home/agent     # Claude memory, skills, installed runtimes, caches
       - ./formulas:/formulas:ro    # formula files imported at startup (workflows as code)
     tmpfs:
@@ -93,4 +98,5 @@ networks:
 volumes:
   data:
   workspaces:
+  outputs:
   agent-home:

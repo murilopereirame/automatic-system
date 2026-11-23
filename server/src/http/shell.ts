@@ -11,6 +11,7 @@ import type { FastifyInstance } from 'fastify';
 import pty from 'node-pty';
 import { config } from '../config.js';
 import { agentShellCommand, baseEnv, workflowEnv } from '../sandbox/agent.js';
+import { outputEnv, prepareOutputDir } from '../sandbox/outputs.js';
 import { getRun } from '../store/runs.js';
 import { getWorkflow } from '../store/workflows.js';
 import { isAuthenticated, isSameOrigin } from './auth.js';
@@ -22,7 +23,7 @@ function shellSession(runId: string | undefined): { cwd: string; env: Record<str
   if (!run || !workflow) return { cwd: config.agentHome, env: baseEnv() };
   const cwd = run.context.workdir ?? run.workspace;
   // A run whose files were cleaned up has no folder left to start in.
-  return { cwd: existsSync(cwd) ? cwd : config.agentHome, env: workflowEnv({ ...workflow, definition: run.definition }) };
+  return { cwd: existsSync(cwd) ? cwd : config.agentHome, env: { ...workflowEnv({ ...workflow, definition: run.definition }), ...outputEnv(run.id) } };
 }
 
 export async function registerShell(app: FastifyInstance): Promise<void> {
@@ -30,6 +31,9 @@ export async function registerShell(app: FastifyInstance): Promise<void> {
     if (!isAuthenticated(request.headers) || !isSameOrigin(request)) return socket.close(4401, 'Not signed in');
 
     const { cwd, env } = shellSession(request.query.runId);
+    // Runs from before output folders existed get theirs when the shell opens, so the output folder variable always points somewhere.
+    // Not awaited, so no terminal input is missed while the folder is created.
+    if (request.query.runId && getRun(request.query.runId)) prepareOutputDir(request.query.runId).catch(() => {});
     let terminal: pty.IPty;
     try {
       const { file, args } = agentShellCommand();

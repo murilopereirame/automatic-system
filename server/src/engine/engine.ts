@@ -27,6 +27,7 @@ import { errorMessage } from '../errors.js';
 import { sendNotification } from '../notify.js';
 import { agentExec, agentMkdir, workflowEnv } from '../sandbox/agent.js';
 import { prepareEnvironment } from '../sandbox/environment.js';
+import { outputEnv, prepareOutputDir, runOutputDir } from '../sandbox/outputs.js';
 import * as runs from '../store/runs.js';
 import { getWorkflow } from '../store/workflows.js';
 import { evaluate, truthy } from '../expression.js';
@@ -87,6 +88,7 @@ export async function executeRun(runId: string): Promise<void> {
   try {
     let workflow = workflowForRun(run);
     await agentMkdir(run.workspace);
+    await prepareOutputDir(run.id);
     await prepare(workflow);
 
     while (run.stepIndex < run.definition.steps.length) {
@@ -160,7 +162,7 @@ function scopeFor(run: Run): Record<(typeof SCOPE_NAMES)[number], unknown> {
     triggeredBy: context.triggeredBy,
     steps: context.steps,
     previous: (above && context.steps[above.id]) ?? { output: null },
-    run: { id: run.id },
+    run: { id: run.id, outputDir: runOutputDir(run.id) },
     repo: context.repo,
     repos: context.repos,
   };
@@ -214,7 +216,7 @@ function buildRuntime(run: Run, workflow: Workflow, step: StepConfig, scope: Rec
       const logOutput = (text: string, stream: string) => log('output', { text, stream });
       return agentExec(command, args, {
         cwd: options.cwd ?? context.workdir ?? run.workspace,
-        env: { ...workflowEnv(workflow), ...options.env },
+        env: { ...workflowEnv(workflow), ...outputEnv(run.id), ...options.env },
         input: options.input,
         signal,
         onOutput: options.onOutput ?? (options.quiet ? undefined : logOutput),
