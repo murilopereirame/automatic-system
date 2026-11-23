@@ -112,6 +112,13 @@ function describe(event: RunEvent): { label: string; tone?: string; body: ReactN
     }
     case 'retried':
       return { label: 'Retried', body: `from block ${data.fromStep}` };
+    case 'workspace_cleaned': {
+      const removed = (data.removed ?? []) as string[];
+      const who = data.reason === 'automatic' ? 'by the workflow\'s cleanup setting' : 'by hand';
+      return { label: 'Files cleaned up', tone: 'heading', body: <Collapsible summary={`${removed.length} folder${removed.length === 1 ? '' : 's'} deleted ${who}`}>{() => <LongText text={removed.join('\n')} />}</Collapsible> };
+    }
+    case 'workspace_cleanup_failed':
+      return { label: 'Cleanup failed', tone: 'bad', body: data.error };
     case 'run_finished':
       return { label: `Run ${data.status}`, tone: data.status === 'succeeded' ? 'good' : 'bad', body: data.error ?? '' };
     default:

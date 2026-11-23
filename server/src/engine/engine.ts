@@ -18,6 +18,9 @@
  *
  * A run keeps its own copy of the workflow definition. `applyDefinition`
  * switches that copy to a newer one (see apply-definition.ts).
+ *
+ * Once a run has ended, `cleanUpRun` deletes its files (see cleanup.ts), on
+ * its own when the workflow's cleanup setting says so, or when a person asks.
  */
 import { config } from '../config.js';
 import { errorMessage } from '../errors.js';
@@ -30,6 +33,7 @@ import { evaluate, truthy } from '../expression.js';
 import { END_OF_RUN } from '../steps/condition.js';
 import { getStepType } from '../steps/index.js';
 import { planApply, type ApplyPlan } from './apply-definition.js';
+import { cleansUpAutomatically, removeRunFiles } from './cleanup.js';
 import { text, type StepRuntime } from '../steps/types.js';
 import { renderDeep } from '../template.js';
 import { MANUAL_TRIGGER, type Run, type SCOPE_NAMES, type StepConfig, type TriggerRef, type Workflow, type WorkflowDefinition } from '../types.js';
@@ -50,6 +54,14 @@ interface ActiveRun {
 const activeRuns = new Map<string, ActiveRun>();
 
 const SKIPPED_BY_HAND = 'skipped by hand';
+
+/** Cleanups that are deleting files right now, by run id. */
+const cleanups = new Map<string, Promise<void>>();
+
+/** Statuses of a run that has ended. Only those runs can be cleaned up. */
+const ENDED = new Set<Run['status']>(['succeeded', 'failed', 'cancelled']);
+
+const CLEANED_UP = 'The files of this run were cleaned up, so it cannot continue. Start a new run instead.';
 
 /** Creates a run for a workflow and starts executing it in the background. */
 export function startRun(workflow: Workflow, payload: Record<string, unknown>, triggeredBy: TriggerRef = MANUAL_TRIGGER): Run {
@@ -223,6 +235,58 @@ function finish(run: Run, status: 'succeeded' | 'failed' | 'cancelled', error?: 
   run.error = error;
   runs.saveRun(run);
   runs.addEvent(run.id, null, 'run_finished', { status, error });
+  // After the current call stack, so executeRun has let go of the run first.
+  if (cleansUpAutomatically(run, status)) setImmediate(() => void cleanUpRun(run.id, 'automatic').catch(() => {}));
+}
+
+/**
+ * Deletes the files of a run that has ended: its workspace and Claude's
+ * conversation files (see cleanup.ts). The run and its log stay in the
+ * history; it just cannot be retried any more. `reason` says who asked:
+ * the workflow's cleanup setting, or a person.
+ */
+export function cleanUpRun(runId: string, reason: 'automatic' | 'manual'): Promise<void> {
+  const running = cleanups.get(runId);
+  if (running) return running;
+  const run = runs.getRun(runId);
+  if (!run) return Promise.reject(new Error('Run not found'));
+  if (run.cleanedAt) return Promise.resolve();
+  if (activeRuns.has(runId) || !ENDED.has(run.status)) return Promise.reject(new Error('Only a run that has ended can be cleaned up. Cancel it first.'));
+
+  const cleanup = (async () => {
+    try {
+      const removed = await removeRunFiles(run);
+      runs.markCleaned(run.id);
+      runs.addEvent(run.id, null, 'workspace_cleaned', { reason, removed });
+    } catch (error) {
+      runs.addEvent(run.id, null, 'workspace_cleanup_failed', { reason, error: errorMessage(error) });
+      throw error;
+    } finally {
+      cleanups.delete(runId);
+    }
+  })();
+  cleanups.set(runId, cleanup);
+  return cleanup;
+}
+
+/** Cleans up every ended run whose files are still there, optionally only those of one workflow. Returns how many were cleaned. */
+export async function cleanUpEndedRuns(workflowId?: string): Promise<number> {
+  let cleaned = 0;
+  for (const run of runs.listUncleanedFinishedRuns(workflowId)) {
+    if (activeRuns.has(run.id)) continue;
+    try {
+      await cleanUpRun(run.id, 'manual');
+      cleaned += 1;
+    } catch {
+      // Recorded on the run as workspace_cleanup_failed; carry on with the others.
+    }
+  }
+  return cleaned;
+}
+
+/** Refuses to continue a run whose files are gone: its blocks would run in an empty folder. */
+function assertNotCleaned(run: Run): void {
+  if (run.cleanedAt || cleanups.has(run.id)) throw new Error(CLEANED_UP);
 }
 
 /**
@@ -275,6 +339,7 @@ export function cancelRun(runId: string): void {
 export function retryRun(runId: string): void {
   const run = runs.getRun(runId);
   if (!run || !['failed', 'cancelled'].includes(run.status)) throw new Error('Only failed or cancelled runs can be retried');
+  assertNotCleaned(run);
   runs.dismissPendingApprovals(runId);
   run.context.repeats = {};
   runs.saveRun(run);
@@ -295,6 +360,7 @@ export function skipStep(runId: string): void {
   const run = runs.getRun(runId);
   if (!run || !['running', 'waiting', 'failed', 'cancelled'].includes(run.status)) throw new Error('Only a run that is running, waiting, failed or cancelled can skip a block');
   if (!run.definition.steps[run.stepIndex]) throw new Error('This run has no block left to skip');
+  assertNotCleaned(run);
 
   const active = activeRuns.get(runId);
   if (active) {
@@ -329,6 +395,7 @@ export function applyDefinition(runId: string, definition: WorkflowDefinition, v
   const run = runs.getRun(runId);
   if (!run) throw new Error('Run not found');
   if (run.status === 'succeeded') throw new Error('This run has finished. Start a new run to use the latest workflow.');
+  assertNotCleaned(run);
 
   const plan = planApply(run.definition, definition, run.stepIndex);
   if (plan.upToDate) return { plan, deferred: false };
@@ -375,7 +442,9 @@ export function recoverInterruptedRuns(): void {
   }
 }
 
-/** Resolves when no run is executing. Used by tests. */
+/** Resolves when no run is executing and no cleanup is deleting files. Used by tests. */
 export async function waitForIdle(): Promise<void> {
-  while (activeRuns.size > 0) await new Promise((resolve) => setTimeout(resolve, 20));
+  // One turn first, so a cleanup that a finished run scheduled has started.
+  do await new Promise((resolve) => setTimeout(resolve, 20));
+  while (activeRuns.size > 0 || cleanups.size > 0);
 }

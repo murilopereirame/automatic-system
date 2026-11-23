@@ -1,6 +1,6 @@
 /** Create or edit a workflow: blocks, environment, notifications, the formula as code, and its version history. */
 import { useEffect, useState } from 'react';
-import { api, type Workflow, type WorkflowDraft } from '../api.ts';
+import { api, type CleanupWhen, type Workflow, type WorkflowDraft } from '../api.ts';
 import { BlockPipeline } from '../components/BlockPipeline.tsx';
 import { CodeView } from '../components/CodeView.tsx';
 import { ErrorNote, PageHeader } from '../components/common.tsx';
@@ -24,7 +24,15 @@ const NEW_WORKFLOW: WorkflowDraft = {
     environment: { runtimes: [], mcpServers: {}, memory: [], skills: [], services: [], network: { allow: [] }, env: {}, secrets: [], mounts: [] },
     notifications: [],
     steps: [],
+    cleanup: { when: 'never' },
   },
+};
+
+/** The choices of the cleanup setting, in the words the editor shows. */
+const CLEANUP_LABELS: Record<CleanupWhen, string> = {
+  never: 'Keep them until I clean up',
+  succeeded: 'Delete them when a run succeeds',
+  finished: 'Delete them when a run ends, also failed or cancelled',
 };
 
 function toDraft(workflow: Workflow): WorkflowDraft {
@@ -175,6 +183,17 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
           <input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />
           <span>Enabled</span>
           <small>Disabled workflows ignore their triggers.</small>
+        </label>
+        <label className="field">
+          <span>Files of finished runs</span>
+          <select value={draft.definition.cleanup?.when ?? 'never'} onChange={(event) => setDefinition({ cleanup: { when: event.target.value as CleanupWhen } })}>
+            {(Object.keys(CLEANUP_LABELS) as CleanupWhen[]).map((when) => (
+              <option key={when} value={when}>
+                {CLEANUP_LABELS[when]}
+              </option>
+            ))}
+          </select>
+          <small>The workspace with its clones, and Claude's conversation. A run whose files are gone cannot be retried.</small>
         </label>
       </section>
 

@@ -6,6 +6,7 @@
  * Protocol: the browser sends JSON `{type:"input",data}` and
  * `{type:"resize",cols,rows}`; the server sends raw terminal output.
  */
+import { existsSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import pty from 'node-pty';
 import { config } from '../config.js';
@@ -19,7 +20,9 @@ function shellSession(runId: string | undefined): { cwd: string; env: Record<str
   const run = runId ? getRun(runId) : undefined;
   const workflow = run && getWorkflow(run.workflowId);
   if (!run || !workflow) return { cwd: config.agentHome, env: baseEnv() };
-  return { cwd: run.context.workdir ?? run.workspace, env: workflowEnv({ ...workflow, definition: run.definition }) };
+  const cwd = run.context.workdir ?? run.workspace;
+  // A run whose files were cleaned up has no folder left to start in.
+  return { cwd: existsSync(cwd) ? cwd : config.agentHome, env: workflowEnv({ ...workflow, definition: run.definition }) };
 }
 
 export async function registerShell(app: FastifyInstance): Promise<void> {
