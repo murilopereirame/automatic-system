@@ -100,3 +100,10 @@ test('a value can be removed again, and a failed run picks values up on retry', 
   assert.match(outputOf(run.id, 'needs'), /got abc/);
   assert.deepEqual(runs.getRun(run.id)!.context.vars, { token: 'abc' });
 });
+
+test('a cleaned-up run takes no more values', async () => {
+  const run = engine.startRun(workflowWith([{ id: 'broken', type: 'shell', with: { command: 'exit 1' } }]), {});
+  await engine.waitForIdle();
+  await engine.cleanUpRun(run.id, 'manual');
+  assert.throws(() => engine.setRunValue(run.id, 'late', 1), /cleaned up/);
+});

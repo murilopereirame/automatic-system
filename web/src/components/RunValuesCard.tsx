@@ -15,7 +15,7 @@ const asText = (value: unknown) => (typeof value === 'string' ? value : JSON.str
 
 export function RunValuesCard({ run, onChanged }: { run: Run; onChanged: () => void }) {
   const values = listValues(run.context.vars);
-  const open = OPEN.has(run.status);
+  const open = OPEN.has(run.status) && !run.cleanedAt;
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
   const [value, setValue] = useState('');

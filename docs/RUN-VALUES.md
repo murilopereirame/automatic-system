@@ -47,7 +47,7 @@ A block's settings are filled in when it starts. So:
 | Waiting for you | The blocks after the approval (or the block the run goes back to on reject) |
 | Running | The blocks after the one running now. The running block already has its settings |
 | Failed or cancelled | The block that failed, when you **Retry**, and everything after it |
-| Succeeded | Nothing. Values can no longer be added or removed |
+| Succeeded, or its files were [cleaned up](CLEANUP.md) | Nothing. Values can no longer be added or removed |
 
 **Edit** replaces a value, **Remove** deletes it (and the group it was in, if
 it was the last one). Every change is in the run's activity log as **Value
