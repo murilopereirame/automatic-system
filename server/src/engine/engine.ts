@@ -66,6 +66,8 @@ const SKIPPED_BY_HAND = 'skipped by hand';
 
 /** Cleanups that are deleting files right now, by run id. */
 const cleanups = new Map<string, Promise<void>>();
+/** Runs whose automatic cleanup is scheduled but has not started yet. Only `waitForIdle` needs it. */
+const scheduledCleanups = new Set<string>();
 
 /** Statuses of a run that has ended. Only those runs can be cleaned up. */
 const ENDED = new Set<Run['status']>(['succeeded', 'failed', 'cancelled']);
@@ -260,7 +262,13 @@ function finish(run: Run, status: 'succeeded' | 'failed' | 'cancelled', error?: 
   runs.saveRun(run);
   runs.addEvent(run.id, null, 'run_finished', { status, error });
   // After the current call stack, so executeRun has let go of the run first.
-  if (cleansUpAutomatically(run, status)) setImmediate(() => void cleanUpRun(run.id, 'automatic').catch(() => {}));
+  if (cleansUpAutomatically(run, status)) {
+    scheduledCleanups.add(run.id);
+    setImmediate(() => {
+      scheduledCleanups.delete(run.id);
+      void cleanUpRun(run.id, 'automatic').catch(() => {});
+    });
+  }
 }
 
 /**
@@ -567,7 +575,7 @@ export function recoverInterruptedRuns(): void {
 
 /** Resolves when no run is executing and no cleanup is deleting files. Used by tests. */
 export async function waitForIdle(): Promise<void> {
-  // One turn first, so a cleanup that a finished run scheduled has started.
+  // A finished run schedules its cleanup for later; wait for scheduled ones too, or a test can look before it started.
   do await new Promise((resolve) => setTimeout(resolve, 20));
-  while (activeRuns.size > 0 || cleanups.size > 0);
+  while (activeRuns.size > 0 || scheduledCleanups.size > 0 || cleanups.size > 0);
 }
