@@ -88,7 +88,7 @@ run stopped at.
 | `triggeredBy` | `triggeredBy.id` and `triggeredBy.type` of that trigger |
 | `steps` | Results of earlier blocks: `steps.<id>.output...` and `steps.<id>.skipped` |
 | `previous` | The block directly above this one: `previous.output...`, `previous.skipped` |
-| `run` | `run.id` |
+| `run` | `run.id`, `run.outputDir` |
 | `repo` | `repo.branch`, `repo.baseBranch`, `repo.owner`, `repo.name`, once a clone block ran |
 | `repos` | Every clone by its folder: `repos.frontend.branch`, `repos.backend.baseBranch`, ... |
 | `vars` | Values added to the run from the run page, e.g. `vars.staging.url` (see [RUN-VALUES.md](RUN-VALUES.md)) |

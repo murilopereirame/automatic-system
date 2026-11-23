@@ -18,6 +18,9 @@ its outputs stay in the history.
 `/home/agent/workflows/<workflow id>/claude`. Everything else in it stays:
 `CLAUDE.md`, memory, skills, MCP settings and the conversations of other runs.
 
+The run's output folder, `/outputs/<run id>`, is not touched either: files a
+run left for you to download stay after a cleanup ([OUTPUTS.md](OUTPUTS.md)).
+
 The server never deletes anything outside the workspaces directory and the
 workflow's Claude config directory, and it deletes as the agent user, which
 owns all of these files. Folders a command made read-only (the Go module cache

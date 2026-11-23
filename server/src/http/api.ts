@@ -1,4 +1,5 @@
 /** JSON API used by the web UI. Every route here requires authentication. */
+import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { planApply } from '../engine/apply-definition.js';
 import { applyDefinition, cancelRun, cleanUpEndedRuns, cleanUpRun, removeRunValue, resolveApproval, retryRun, setPromptOverride, setRunValue, skipStep, startRun } from '../engine/engine.js';
@@ -8,6 +9,7 @@ import { parseDefinition, parseFormula, toFormula } from '../formula.js';
 import { config } from '../config.js';
 import { recentlyBlocked } from '../egress.js';
 import { checkMounts, checkServices, readMemory, readSkills, writeMemory } from '../sandbox/environment.js';
+import { archiveOutputs, listOutputs, readOutput } from '../sandbox/outputs.js';
 import * as runs from '../store/runs.js';
 import { deleteSecret, listSecretNames, setSecret } from '../store/secrets.js';
 import { getSettings, saveSettings } from '../store/settings.js';
@@ -96,6 +98,12 @@ function isOutdated(run: Run, workflow: Workflow | undefined): boolean {
 /** Open runs of a workflow that use an older definition than the saved one. */
 function outdatedRuns(workflow: Workflow): Run[] {
   return runs.listRuns({ workflowId: workflow.id, limit: 1000 }).filter((run) => OPEN_STATUSES.has(run.status) && isOutdated(run, workflow));
+}
+
+/** A Content-Disposition header that makes the browser save the file under `filename`, whatever characters it has. */
+function attachment(filename: string): string {
+  const ascii = filename.replace(/[^\x20-\x7e]|["\\]/g, '_');
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
 /** Runs `action`, turning the engine's "not possible right now" errors into 409 answers. Errors that already carry a status keep it. */
@@ -274,6 +282,33 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
     const workflow = workflows.getWorkflow(run.workflowId);
     if (!workflow) throw new HttpError(409, 'The workflow of this run was deleted');
     return conflictOnError(() => applyDefinition(run.id, workflow.definition, workflow.version));
+  });
+
+  // ---- Output files ----------------------------------------------------------
+  // What a run put in its output folder (see sandbox/outputs.ts). Downloads are
+  // always attachments with nosniff, so a file such as an HTML report can never
+  // run as a page of this app.
+
+  app.get<IdParams>('/runs/:id/outputs', async (request) => listOutputs(runOr404(request.params.id).id));
+
+  app.get<IdParams & { Querystring: { path?: string } }>('/runs/:id/outputs/file', async (request, reply) => {
+    const run = runOr404(request.params.id);
+    const found = await readOutput(run.id, String(request.query.path ?? ''));
+    if (!found) throw new HttpError(404, 'No such file in the output folder');
+    return reply
+      .type('application/octet-stream')
+      .header('X-Content-Type-Options', 'nosniff')
+      .header('Content-Disposition', attachment(path.posix.basename(found.file.path)))
+      .send(found.stream);
+  });
+
+  app.get<IdParams>('/runs/:id/outputs/archive', async (request, reply) => {
+    const run = runOr404(request.params.id);
+    return reply
+      .type('application/gzip')
+      .header('X-Content-Type-Options', 'nosniff')
+      .header('Content-Disposition', attachment(`run-${run.id.slice(0, 8)}-outputs.tar.gz`))
+      .send(archiveOutputs(run.id));
   });
 
   app.post<IdParams>('/runs/:id/cancel', async (request) => {
