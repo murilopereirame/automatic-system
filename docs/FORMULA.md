@@ -82,6 +82,7 @@ Text settings may contain `{{ path }}` placeholders.
 | `{{triggeredBy.id}}`, `{{triggeredBy.type}}` | Which trigger started the run. Both are `manual` for **Run now** |
 | `{{steps.<id>.output...}}` | Output of an earlier block, e.g. `{{steps.implement.output.result}}` |
 | `{{run.id}}` | Id of the run |
+| `{{run.outputDir}}` | The run's output folder for files you download from the run page ([OUTPUTS.md](OUTPUTS.md)). Also `$AUTOWORKER_OUTPUT_DIR` in commands |
 | `{{repo.branch}}`, `{{repo.baseBranch}}`, `{{repo.owner}}`, `{{repo.name}}` | Set by the first clone block |
 | `{{repos.<folder>.branch}}`, `.baseBranch`, `.owner`, `.name`, `.dir` | Every clone, by the folder it was cloned into, e.g. `{{repos.frontend.branch}}` |
 | `{{vars...}}` | Values added to the run from the run page while it is open, e.g. `{{vars.staging.url}}`. See [RUN-VALUES.md](RUN-VALUES.md) |
@@ -343,7 +344,7 @@ expression: when it is false the run skips the block. See
 | `notify` | Calls the notification webhooks. `message`, optional `channel` (webhook name) | `delivered` |
 | `clickup_fetch_task` | Loads a ClickUp task. `taskId`, `includeComments` (the 25 most recent, each with its thread), `includeSubtasks`, `downloadAttachments` (task attachments and files pasted into comments, saved to `task-attachments/` in the run workspace, next to the repository) | `id`, `name`, `description`, `url`, `status`, `comments` (oldest first; each has `id`, `author`, `text`, `date`, `resolved`, `files` and `replies`), `subtasks`, `attachments`, `attachmentFiles` |
 | `git_clone` | Clones a GitHub repository and creates the working branch, or continues an existing one. `repo` (`owner/name`), `baseBranch`, `branch`, `reuseBranch` (a branch name or a pattern with `*`; the newest matching remote branch is checked out instead of creating `branch`), `path` (folder in the workspace, default `repo`), `tokenSecret`. Also makes sure commits in the clone have an author: the one under Settings, else the owner of the token (see [Commit author](ARCHITECTURE.md#commit-author)) | `owner`, `name`, `baseBranch`, `branch`, `path`, `reused`, `startCommit` (where this run started on the branch) |
-| `claude` | Runs Claude Code with a `prompt`. Optional `model`, `permissionMode`, `allowedTools`, `maxTurns`, `continueSession`, `cwd` | `result`, `sessionId`, `costUsd`, `turns` |
+| `claude` | Runs Claude Code with a `prompt`. Optional `model`, `permissionMode`, `allowedTools`, `maxTurns`, `continueSession`, `mentionOutputDir` (default `true`: tells Claude about the output folder), `cwd` | `result`, `sessionId`, `costUsd`, `turns` |
 | `shell` | Runs a `command` as the agent user, e.g. tests. `continueOnError`, `cwd` | `exitCode`, `passed`, `output` |
 | `approval` | Pauses until you approve or reject. `message`, optional `onReject` (id of an earlier block) | `decision`, `comment` |
 | `condition` | An if/else. `expression`, optional `then` and `else` (a block id, or `$end` to finish the run), `maxRepeats`. See [EXPRESSIONS.md](EXPRESSIONS.md) | `result`, `branch`, `goTo` |

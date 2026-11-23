@@ -4,6 +4,7 @@
  */
 import { config } from '../config.js';
 import { mcpConfigPath } from '../sandbox/environment.js';
+import { OUTPUT_DIR_VARIABLE, runOutputDir } from '../sandbox/outputs.js';
 import { blockCwd, cwdField, flag, text, type StepRuntime, type StepType } from './types.js';
 
 interface ClaudeResult {
@@ -41,6 +42,7 @@ function buildArgs(runtime: StepRuntime, prompt: string, cwd: string): string[] 
   if (text(params, 'model')) args.push('--model', text(params, 'model'));
   if (text(params, 'maxTurns')) args.push('--max-turns', text(params, 'maxTurns'));
   if (text(params, 'allowedTools')) args.push('--allowedTools', text(params, 'allowedTools'));
+  if (flag(params, 'mentionOutputDir', true)) args.push('--append-system-prompt', outputDirInstructions(runtime.run.id));
   if (Object.keys(workflow.definition.environment.mcpServers).length > 0) {
     args.push('--mcp-config', mcpConfigPath(workflow.id));
   }
@@ -54,6 +56,14 @@ function buildArgs(runtime: StepRuntime, prompt: string, cwd: string): string[] 
     }
   }
   return args;
+}
+
+/** Tells Claude where files meant for the user go, so they do not end up in the repository. */
+export function outputDirInstructions(runId: string): string {
+  return [
+    `Files meant for the user rather than for the repository (screenshots, reports, logs, exported data, build artifacts) go in the output folder ${runOutputDir(runId)}, also available as the ${OUTPUT_DIR_VARIABLE} environment variable.`,
+    'The user downloads them from the run page. The folder is outside the git repository, so nothing in it is committed.',
+  ].join(' ');
 }
 
 /** A rejected approval hands its comment to the next Claude step, once. */
@@ -78,6 +88,13 @@ export const claudeStep: StepType = {
       help: 'Use {{trigger...}} and {{steps.<id>.output...}} to insert values from the run.',
     },
     { key: 'continueSession', label: 'Continue the conversation of earlier Claude steps', type: 'boolean', default: true },
+    {
+      key: 'mentionOutputDir',
+      label: 'Tell Claude about the output folder',
+      type: 'boolean',
+      default: true,
+      help: "Adds a note to Claude's system prompt: files meant for you (screenshots, reports, artifacts) go in the run's output folder, which you download from the run page.",
+    },
     { key: 'model', label: 'Model', type: 'text', placeholder: 'Default model' },
     { key: 'permissionMode', label: 'Permission mode', type: 'select', options: ['bypassPermissions', 'acceptEdits', 'plan', 'default'], default: 'bypassPermissions' },
     { key: 'allowedTools', label: 'Allowed tools', type: 'text', placeholder: 'All tools', help: 'Comma separated, e.g. Read,Edit,Bash(npm test:*)' },

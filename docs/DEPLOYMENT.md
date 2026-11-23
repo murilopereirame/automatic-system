@@ -54,7 +54,27 @@ flowchart LR
 | `data` | `/data` | Workflows, run history, encrypted secrets | Yes |
 | `agent-home` | `/home/agent` | Claude memory and skills per workflow, installed runtimes, package caches | Optional. Memory is also part of exported formulas |
 | `workspaces` | `/workspaces` | One directory per run, with the cloned repository | No |
+| `outputs` | `/outputs` | One directory per run with the files it left for you ([OUTPUTS.md](OUTPUTS.md)) | If you need them |
 | `./formulas` | `/formulas` (read-only) | Formula files imported at every start | Keep in version control |
+
+### Output files on the host
+
+Runs put files meant for you in `/outputs/<run id>` (see [OUTPUTS.md](OUTPUTS.md)),
+and the run page downloads them. To have them land in a folder on the host
+instead, swap the `outputs` volume for a bind mount of a dedicated, empty
+folder that the agent user (uid 10001) owns:
+
+```bash
+mkdir outputs && sudo chown 10001:10001 outputs
+```
+
+```yaml
+    volumes:
+      - ./outputs:/outputs
+```
+
+The agent can write to everything in that folder, so never point it at a
+folder that holds anything else.
 
 ## Redeploying
 

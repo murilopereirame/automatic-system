@@ -47,6 +47,7 @@ RUN groupadd --gid 10001 agent \
  && useradd --uid 10001 --gid agent --create-home --home-dir /home/agent --shell /bin/bash agent \
  && install -d -o root -g root -m 0700 /data \
  && install -d -o agent -g agent -m 0755 /workspaces \
+ && install -d -o agent -g agent -m 0755 /outputs \
  && install -d -o root -g root -m 0755 /formulas
 
 WORKDIR /app
@@ -59,12 +60,13 @@ COPY --from=build /src/web/dist web/dist
 ENV NODE_ENV=production \
     AUTOWORKER_DATA_DIR=/data \
     AUTOWORKER_WORKSPACES_DIR=/workspaces \
+    AUTOWORKER_OUTPUTS_DIR=/outputs \
     AUTOWORKER_AGENT_HOME=/home/agent \
     AUTOWORKER_AGENT_UID=10001 \
     AUTOWORKER_AGENT_GID=10001 \
     AUTOWORKER_FORMULAS_DIR=/formulas
 
-VOLUME ["/data", "/workspaces", "/home/agent"]
+VOLUME ["/data", "/workspaces", "/outputs", "/home/agent"]
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
