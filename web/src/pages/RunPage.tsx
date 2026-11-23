@@ -89,7 +89,13 @@ export function RunPage({ runId }: { runId: string }) {
   const pending = approvals.filter((approval) => approval.status === 'pending');
   const active = run.status === 'running' || run.status === 'queued' || run.status === 'waiting';
   const currentStep: StepConfig | undefined = run.definition.steps[run.stepIndex];
-  const canSkip = currentStep && ['running', 'waiting', 'failed', 'cancelled'].includes(run.status);
+  const cleaned = run.cleanedAt !== undefined;
+  const canSkip = currentStep && !cleaned && ['running', 'waiting', 'failed', 'cancelled'].includes(run.status);
+  const canCleanUp = !active && !cleaned;
+  const cleanUp = () => {
+    const note = run.status === 'succeeded' ? '' : ' The run cannot be retried afterwards.';
+    if (window.confirm(`Delete the files of this run: the workspace with its clones and Claude's conversation?${note} The run and its log stay.`)) act(api.cleanUpRun(run.id));
+  };
   const skip = () => {
     const name = currentStep?.name || currentStep?.id;
     const stops = run.status === 'running' ? ' What it is doing right now is stopped.' : '';
@@ -108,7 +114,12 @@ export function RunPage({ runId }: { runId: string }) {
           </>
         }
       >
-        <button onClick={() => setShellOpen(!shellOpen)}>{shellOpen ? 'Close shell' : 'Open shell'}</button>
+        {!cleaned && <button onClick={() => setShellOpen(!shellOpen)}>{shellOpen ? 'Close shell' : 'Open shell'}</button>}
+        {canCleanUp && (
+          <button onClick={cleanUp} title="Delete the workspace and Claude's conversation files of this run">
+            Clean up files
+          </button>
+        )}
         {active && (
           <button className="danger" onClick={() => act(api.cancelRun(run.id))}>
             Cancel run
@@ -119,7 +130,7 @@ export function RunPage({ runId }: { runId: string }) {
             Skip "{currentStep.name || currentStep.id}"
           </button>
         )}
-        {(run.status === 'failed' || run.status === 'cancelled') && (
+        {(run.status === 'failed' || run.status === 'cancelled') && !cleaned && (
           <button className="primary" onClick={() => act(api.retryRun(run.id))}>
             Retry from failed block
           </button>
@@ -136,9 +147,14 @@ export function RunPage({ runId }: { runId: string }) {
           </>
         )}
         {run.context.repo && ` · ${run.context.repo.owner}/${run.context.repo.name} on ${run.context.repo.branch}`}
+        {run.cleanedAt && (
+          <>
+            {' · '}files cleaned up <TimeAgo time={run.cleanedAt} />
+          </>
+        )}
       </p>
       <ErrorNote message={error ?? (run.status === 'failed' ? run.error : undefined)} />
-      {outdated && <ApplyLatestCard run={run} onApplied={reload} />}
+      {outdated && !cleaned && <ApplyLatestCard run={run} onApplied={reload} />}
 
       {pending.map((approval) => {
         const step = stepOf(approval.stepId);
@@ -154,7 +170,7 @@ export function RunPage({ runId }: { runId: string }) {
         );
       })}
 
-      {shellOpen && (
+      {shellOpen && !cleaned && (
         <section className="card shell-card">
           <p className="muted">
             Shell in <code>{run.context.workdir ?? run.workspace}</code>, as the same user and with the same environment as Claude.

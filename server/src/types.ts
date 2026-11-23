@@ -142,6 +142,20 @@ export interface NotificationWebhook {
   body?: string;
 }
 
+/**
+ * When a run's files are deleted on their own (see engine/cleanup.ts):
+ *  - never: only when someone presses "Clean up files"
+ *  - succeeded: as soon as the run succeeds
+ *  - finished: as soon as the run succeeds, fails or is cancelled. A failed run then cannot be retried.
+ */
+export type CleanupWhen = 'never' | 'succeeded' | 'finished';
+
+export const CLEANUP_WHEN: CleanupWhen[] = ['never', 'succeeded', 'finished'];
+
+export interface CleanupPolicy {
+  when: CleanupWhen;
+}
+
 export interface WorkflowDefinition {
   /** Any of these starts a run. Empty means runs only start from "Run now". */
   triggers: TriggerConfig[];
@@ -150,6 +164,13 @@ export interface WorkflowDefinition {
   environment: Environment;
   notifications: NotificationWebhook[];
   steps: StepConfig[];
+  /** What happens to the run's files when it finishes. Missing on workflows stored before cleanup existed, which means `never`. */
+  cleanup?: CleanupPolicy;
+}
+
+/** The cleanup policy of a definition, with the default for definitions stored before cleanup existed. */
+export function cleanupPolicy(definition: WorkflowDefinition): CleanupPolicy {
+  return definition.cleanup ?? { when: 'never' };
 }
 
 export interface Workflow {
@@ -249,6 +270,8 @@ export interface Run {
   workflowVersion?: number;
   context: RunContext;
   workspace: string;
+  /** When the run's files (workspace and Claude conversation) were deleted. A cleaned run cannot continue. */
+  cleanedAt?: string;
   error?: string;
   createdAt: string;
   updatedAt: string;

@@ -3,7 +3,7 @@
  *
  * A formula contains the triggers, the inputs of a manual run, the blocks and the whole environment
  * (runtimes, MCP servers, Claude memory, environment variables, mounts) and
- * the notification webhooks.
+ * the notification webhooks, and when the files of a run are cleaned up.
  * Secret values are never part of a formula, only their names.
  */
 import YAML from 'yaml';
@@ -14,7 +14,7 @@ import { parseInputs } from './inputs.js';
 import { getStepType } from './steps/index.js';
 import type { HistoryEntry, WorkflowInput } from './store/workflows.js';
 import { getTriggerType } from './triggers/index.js';
-import { emptyEnvironment, SCOPE_NAMES, type Environment, type MemoryFile, type NotificationWebhook, type SkillSpec, type StepConfig, type TriggerConfig, type VersionSource, type Workflow, type WorkflowDefinition, type WorkflowVersion } from './types.js';
+import { CLEANUP_WHEN, cleanupPolicy, emptyEnvironment, SCOPE_NAMES, type CleanupPolicy, type Environment, type MemoryFile, type NotificationWebhook, type SkillSpec, type StepConfig, type TriggerConfig, type VersionSource, type Workflow, type WorkflowDefinition, type WorkflowVersion } from './types.js';
 
 export const FORMULA_API_VERSION = 'autoworker/v1';
 
@@ -160,6 +160,14 @@ function parseTriggers(raw: Record<string, unknown>): TriggerConfig[] {
   return triggers;
 }
 
+/** Reads `cleanup`. Leaving it out means the files stay until someone cleans them up. */
+function parseCleanup(input: unknown): CleanupPolicy {
+  const raw = asObject(input, 'cleanup');
+  const when = raw.when ?? 'never';
+  if (!CLEANUP_WHEN.includes(when as CleanupPolicy['when'])) invalid(`cleanup.when must be one of ${CLEANUP_WHEN.join(', ')}`);
+  return { when: when as CleanupPolicy['when'] };
+}
+
 /** Validates untrusted input (API body or parsed YAML) and returns a clean definition. */
 export function parseDefinition(input: unknown): WorkflowDefinition {
   const raw = asObject(input, 'the workflow');
@@ -169,6 +177,7 @@ export function parseDefinition(input: unknown): WorkflowDefinition {
     environment: parseEnvironment(raw.environment),
     notifications: parseNotifications(raw.notifications),
     steps: parseSteps(raw.steps),
+    cleanup: parseCleanup(raw.cleanup),
   };
 }
 
@@ -254,6 +263,7 @@ export function toFormula(workflow: Workflow, options: FormulaOptions = {}): str
     inputs,
     environment: { ...environment, memory: options.memory ?? environment.memory, skills: options.skills ?? environment.skills },
     notifications,
+    cleanup: cleanupPolicy(workflow.definition),
     steps,
     ...(options.history?.length && {
       history: [...options.history]

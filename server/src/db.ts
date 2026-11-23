@@ -99,6 +99,8 @@ function open(): DatabaseSync {
   // What an approval is about (see ApprovalKind) and what it shows, e.g. the prompt of a Claude block it paused before.
   addColumn(database, 'approvals', 'kind', "TEXT NOT NULL DEFAULT 'approval'");
   addColumn(database, 'approvals', 'data', "TEXT NOT NULL DEFAULT '{}'");
+  // When the run's files were deleted (see engine/cleanup.ts). NULL while they are on disk.
+  addColumn(database, 'runs', 'cleaned_at', 'TEXT');
   return database;
 }
 
