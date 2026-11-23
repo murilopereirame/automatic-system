@@ -202,6 +202,14 @@ flowchart LR
     M[mark the block as skipped] --> N[stepIndex + 1] --> C([run continues])
 ```
 
+### Cleaning up a run's files
+
+When a run ends, `finish` checks the workflow's `cleanup.when` setting and, if
+it applies, deletes the run's workspace and Claude's conversation files
+(`engine/cleanup.ts`). A person can do the same from the run page. The run is
+marked with `cleanedAt` and can no longer be retried, skipped or switched to
+a newer definition. Details and a diagram in [CLEANUP.md](CLEANUP.md).
+
 If the server restarts, runs that were executing are marked as failed with a
 note, and can be retried from the block they were in. Runs waiting for
 approval simply keep waiting.
@@ -291,7 +299,7 @@ erDiagram
 | Location (container) | Owner | Content |
 |----------------------|-------|---------|
 | `/data` | server | Database with workflows, runs and encrypted secrets. The agent user cannot read it |
-| `/workspaces/<run id>` | agent | Working directory of a run, including the cloned repository |
+| `/workspaces/<run id>` | agent | Working directory of a run, including the cloned repository. Deleted by a cleanup ([CLEANUP.md](CLEANUP.md)) |
 | `/outputs/<run id>` | agent | Output folder of a run (`$AUTOWORKER_OUTPUT_DIR`): files meant to be downloaded. Kept when workspaces are cleaned up. See [OUTPUTS.md](OUTPUTS.md) |
 | `/home/agent/workflows/<workflow id>/claude` | agent | Claude config directory of a workflow: `CLAUDE.md`, memory, sessions |
 | `/home/agent/workflows/<workflow id>/mcp.json` | agent | MCP servers from the formula |

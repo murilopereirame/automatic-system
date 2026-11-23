@@ -109,3 +109,12 @@ test('runs from before output folders existed list an empty folder', async () =>
   assert.ok(!existsSync(path.join(config.outputsDir, run.id)));
   assert.deepEqual((await listing(run.id)).files, []);
 });
+
+test('cleaning up a run deletes its workspace but keeps its output files', async () => {
+  const { removeRunFiles } = await import('../src/engine/cleanup.js');
+  const run = await runSteps([{ id: 'write', type: 'shell', with: { command: 'echo kept > "$AUTOWORKER_OUTPUT_DIR/kept.txt"' } }]);
+  const removed = await removeRunFiles(run);
+  assert.ok(removed.includes(run.workspace) && !existsSync(run.workspace), 'the workspace is gone');
+  assert.ok(!removed.some((file) => file.startsWith(config.outputsDir)));
+  assert.deepEqual((await listing(run.id)).files.map((file: any) => file.path), ['kept.txt']);
+});

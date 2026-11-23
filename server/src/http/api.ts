@@ -2,7 +2,7 @@
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { planApply } from '../engine/apply-definition.js';
-import { applyDefinition, cancelRun, resolveApproval, retryRun, skipStep, startRun } from '../engine/engine.js';
+import { applyDefinition, cancelRun, cleanUpEndedRuns, cleanUpRun, resolveApproval, retryRun, skipStep, startRun } from '../engine/engine.js';
 import { HttpError } from '../errors.js';
 import { applyInputs } from '../inputs.js';
 import { parseDefinition, parseFormula, toFormula } from '../formula.js';
@@ -331,6 +331,23 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
       throw new HttpError(409, (error as Error).message);
     }
     return { ok: true };
+  });
+
+  /** Deletes the run's workspace and Claude conversation files. Only for runs that have ended; the run and its log stay. */
+  app.post<IdParams>('/runs/:id/cleanup', async (request) => {
+    const run = runOr404(request.params.id);
+    try {
+      await cleanUpRun(run.id, 'manual');
+    } catch (error) {
+      throw new HttpError(409, (error as Error).message);
+    }
+    return runs.getRun(run.id);
+  });
+
+  /** Cleans up every ended run whose files are still there. `{ workflowId }` limits it to one workflow. */
+  app.post('/runs/cleanup', async (request) => {
+    const workflowId = (request.body as any)?.workflowId;
+    return { cleaned: await cleanUpEndedRuns(typeof workflowId === 'string' && workflowId ? workflowId : undefined) };
   });
 
   /** Server-sent events: everything that happens in any run, for live updates. */

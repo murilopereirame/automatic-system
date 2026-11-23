@@ -137,6 +137,10 @@ export const api = {
   cancelRun: (id: string) => request('POST', `/runs/${id}/cancel`, {}),
   retryRun: (id: string) => request('POST', `/runs/${id}/retry`, {}),
   skipStep: (id: string) => request('POST', `/runs/${id}/skip`, {}),
+  /** Deletes the files of a run that has ended. The run and its log stay. */
+  cleanUpRun: (id: string) => request<Run>('POST', `/runs/${id}/cleanup`, {}),
+  /** Cleans up every ended run whose files are still there, optionally only those of one workflow. */
+  cleanUpEndedRuns: (workflowId?: string) => request<{ cleaned: number }>('POST', '/runs/cleanup', { workflowId }),
   applyLatestPlan: (id: string) => request<ApplyPlan>('GET', `/runs/${id}/apply-latest`),
   applyLatest: (id: string) => request<{ plan: ApplyPlan; deferred: boolean }>('POST', `/runs/${id}/apply-latest`, {}),
   outdatedRuns: (workflowId: string) => request<Pick<Run, 'id' | 'status' | 'createdAt'>[]>('GET', `/workflows/${workflowId}/outdated-runs`),

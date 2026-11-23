@@ -45,7 +45,7 @@ export interface ApplyPlan {
   currentRemoved: boolean;
 }
 
-const SECTIONS = ['triggers', 'inputs', 'environment', 'notifications'] as const;
+const SECTIONS = ['triggers', 'inputs', 'environment', 'notifications', 'cleanup'] as const;
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const label = (step: StepConfig) => step.name || step.id;

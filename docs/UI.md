@@ -99,6 +99,11 @@ same payload under **Triggered**. Inputs are described in
   ![Applying the latest workflow to a waiting run](images/apply-latest-run.png)
 - **Retry from failed block** runs the failed block again. A condition block
   that had gone back too often gets its full number of repeats again.
+- **Clean up files** deletes the run's workspace and Claude's conversation
+  files once the run has ended. The run and its log stay; it cannot be
+  retried afterwards. The Runs page has **Clean up ended runs** for all of
+  them at once, and the workflow editor has **Files of finished runs** to do
+  it automatically. See [CLEANUP.md](CLEANUP.md).
 - **Open shell** starts a terminal in the run's workspace, as the same user
   and with the same environment as Claude. Use it to inspect the work or run
   git commands while the run waits for you.

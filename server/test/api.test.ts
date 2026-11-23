@@ -182,3 +182,24 @@ test('the web shell runs commands as the agent and refuses anonymous connections
   assert.doesNotMatch(output, new RegExp(TOKEN));
   shell.close();
 });
+
+test('a finished run can be cleaned up through the API, one at a time or all at once', async () => {
+  const created = await app.inject({ method: 'POST', url: '/api/workflows', headers: auth, payload: { name: 'Cleanup API', definition: { steps: [{ id: 'touch', type: 'shell', with: { command: 'touch x' } }] } } });
+  const workflow = created.json();
+  assert.deepEqual(workflow.definition.cleanup, { when: 'never' });
+  const start = async () => (await app.inject({ method: 'POST', url: `/api/workflows/${workflow.id}/run`, headers: auth, payload: {} })).json();
+  const first = await start();
+  const second = await start();
+  await waitForIdle();
+
+  const cleaned = await app.inject({ method: 'POST', url: `/api/runs/${first.id}/cleanup`, headers: auth, payload: {} });
+  assert.equal(cleaned.statusCode, 200);
+  assert.ok(cleaned.json().cleanedAt);
+  const retry = await app.inject({ method: 'POST', url: `/api/runs/${first.id}/retry`, headers: auth, payload: {} });
+  assert.equal(retry.statusCode, 409);
+
+  const bulk = await app.inject({ method: 'POST', url: '/api/runs/cleanup', headers: auth, payload: { workflowId: workflow.id } });
+  assert.deepEqual(bulk.json(), { cleaned: 1 });
+  const detail = await app.inject({ url: `/api/runs/${second.id}`, headers: auth });
+  assert.ok(detail.json().run.cleanedAt);
+});
