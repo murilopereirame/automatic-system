@@ -84,6 +84,11 @@ same payload under **Triggered**. Inputs are described in
 - A pending approval appears on top. Approve to continue. Reject with a
   comment to send the run back to an earlier block with your comment as
   feedback for Claude, when the block is configured that way.
+- **Values for upcoming blocks** adds values to the run while it is open, such
+  as the URL of the staging deploy you just made. Blocks that start afterwards
+  read them as `{{vars.<name>}}`. See [RUN-VALUES.md](RUN-VALUES.md).
+
+  ![Values for upcoming blocks](images/run-values.png)
 - **Skip "block name"** passes over the block the run is at and continues with
   the next one. Use it when a block is stuck or not needed this time. It is
   there while the block runs (what it is doing is stopped), waits for you, or

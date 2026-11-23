@@ -43,6 +43,7 @@ flowchart LR
 | [docs/UI.md](docs/UI.md) | The web UI: pages, editor, run view, with screenshots |
 | [docs/FORMULA.md](docs/FORMULA.md) | Formula reference: triggers, environment, notifications, blocks, templates |
 | [docs/VERSIONING.md](docs/VERSIONING.md) | Workflow versions: history, diff, rollback, history in formulas |
+| [docs/RUN-VALUES.md](docs/RUN-VALUES.md) | Adding values to a run while it is open, for the blocks after it |
 | [docs/EXPRESSIONS.md](docs/EXPRESSIONS.md) | Conditions: skipping blocks, if/else, and the expression language |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Running it with Docker, first workflow, volumes, updating, CI/CD |
 | [docs/SECURITY.md](docs/SECURITY.md) | How the sandbox works, what is verified on every build, known limits |

@@ -1,10 +1,11 @@
-/** One run: its blocks with their state, the live event log, pending approvals and the web shell. */
+/** One run: its blocks with their state, the live event log, pending approvals, values for upcoming blocks and the web shell. */
 import { useEffect, useRef, useState } from 'react';
 import { api, type Run, type RunDetail, type RunStatus, type StepConfig } from '../api.ts';
 import { ApplyLatestCard } from '../components/ApplyLatestCard.tsx';
 import { ApprovalCard } from '../components/ApprovalCard.tsx';
 import { ErrorNote, PageHeader, StatusBadge, TimeAgo } from '../components/common.tsx';
 import { EventLog } from '../components/EventLog.tsx';
+import { RunValuesCard } from '../components/RunValuesCard.tsx';
 import { Terminal } from '../components/Terminal.tsx';
 import { useLive } from '../live.ts';
 import { useRunLog } from '../use-run-log.ts';
@@ -150,6 +151,8 @@ export function RunPage({ runId }: { runId: string }) {
           />
         );
       })}
+
+      <RunValuesCard run={run} onChanged={reload} />
 
       {shellOpen && (
         <section className="card shell-card">

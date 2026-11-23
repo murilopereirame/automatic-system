@@ -81,6 +81,7 @@ Text settings may contain `{{ path }}` placeholders.
 | `{{run.id}}` | Id of the run |
 | `{{repo.branch}}`, `{{repo.baseBranch}}`, `{{repo.owner}}`, `{{repo.name}}` | Set by the first clone block |
 | `{{repos.<folder>.branch}}`, `.baseBranch`, `.owner`, `.name`, `.dir` | Every clone, by the folder it was cloned into, e.g. `{{repos.frontend.branch}}` |
+| `{{vars...}}` | Values added to the run from the run page while it is open, e.g. `{{vars.staging.url}}`. See [RUN-VALUES.md](RUN-VALUES.md) |
 
 Unknown placeholders render as empty text.
 
