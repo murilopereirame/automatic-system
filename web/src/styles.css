@@ -680,6 +680,29 @@ pre.code {
   margin-bottom: 12px;
 }
 
+/* ---- Editing prompts (docs/PAUSE_BEFORE.md) --------------------------- */
+
+.prompt-editor {
+  font-family: var(--mono);
+  font-size: 13px;
+  width: 100%;
+}
+
+.run-prompt {
+  margin-bottom: 12px;
+}
+
+.run-prompt summary {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  cursor: pointer;
+}
+
+.run-prompt textarea {
+  margin-top: 12px;
+}
+
 /* ---- Applying workflow edits to runs ----------------------------------- */
 
 .apply-latest {

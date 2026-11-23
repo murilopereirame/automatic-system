@@ -39,6 +39,11 @@ export interface StepType {
   description: string;
   fields: FieldSpec[];
   execute(runtime: StepRuntime): Promise<StepResult>;
+  /**
+   * What a person is shown when the run pauses before this block (`pauseBefore`),
+   * e.g. the prompt of a Claude block. Must not change the run.
+   */
+  preview?(runtime: StepRuntime): Record<string, unknown>;
 }
 
 /** Small helpers to read rendered settings with a fallback. */

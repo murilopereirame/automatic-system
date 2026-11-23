@@ -44,6 +44,7 @@ flowchart LR
 | [docs/FORMULA.md](docs/FORMULA.md) | Formula reference: triggers, environment, notifications, blocks, templates |
 | [docs/VERSIONING.md](docs/VERSIONING.md) | Workflow versions: history, diff, rollback, history in formulas |
 | [docs/EXPRESSIONS.md](docs/EXPRESSIONS.md) | Conditions: skipping blocks, if/else, and the expression language |
+| [docs/PAUSE_BEFORE.md](docs/PAUSE_BEFORE.md) | Pausing before a block, and editing Claude's prompt on a running run |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Running it with Docker, first workflow, volumes, updating, CI/CD |
 | [docs/SECURITY.md](docs/SECURITY.md) | How the sandbox works, what is verified on every build, known limits |
 | [docs/CAPABILITIES.md](docs/CAPABILITIES.md) | What an agent needs for a real task and where each need is covered |

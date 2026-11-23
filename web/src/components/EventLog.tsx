@@ -80,7 +80,14 @@ function describe(event: RunEvent): { label: string; tone?: string; body: ReactN
     case 'condition':
       return { label: data.result ? 'Condition true' : 'Condition false', tone: data.result ? 'good' : 'attention', body: <><code>{data.expression}</code>{data.goTo ? ` → continues with ${data.goTo === '$end' ? 'the end of the run' : data.goTo}` : ''}</> };
     case 'claude_prompt':
-      return { label: 'Prompt', body: <LongText as="prose" text={String(data.prompt ?? '')} /> };
+      // `source` says why the prompt is not the workflow's (see docs/PAUSE_BEFORE.md). Older runs do not have it.
+      return { label: data.source && data.source !== 'workflow' ? `Prompt (${data.source})` : 'Prompt', body: <LongText as="prose" text={String(data.prompt ?? '')} /> };
+    case 'prompt_edited':
+      return { label: 'Prompt edited before run', body: 'You changed the prompt at the pause. Claude gets your version this time.' };
+    case 'prompt_override_set':
+      return { label: 'Prompt set for this run', body: 'This block uses the prompt you set on the run page, until you go back to the workflow prompt.' };
+    case 'prompt_override_cleared':
+      return { label: 'Prompt reset', body: "This block uses the workflow's prompt again." };
     case 'claude_text':
       return { label: 'Claude', tone: 'claude', body: <LongText as="prose" text={String(data.text ?? '')} /> };
     case 'claude_tool':
@@ -98,6 +105,7 @@ function describe(event: RunEvent): { label: string; tone?: string; body: ReactN
     case 'approval_requested':
       return { label: 'Waiting for you', tone: 'attention', body: data.message };
     case 'approval_resolved':
+      if (data.kind === 'before_step') return { label: data.decision === 'approved' ? 'Released' : 'Stopped', tone: data.decision === 'approved' ? 'good' : 'bad', body: data.decision === 'approved' ? 'You let the block run.' : data.comment || 'You stopped the run before this block.' };
       return { label: data.decision === 'approved' ? 'Approved' : 'Rejected', tone: data.decision === 'approved' ? 'good' : 'bad', body: data.comment || 'No comment' };
     case 'pull_request':
       return { label: 'Pull request', tone: 'good', body: <a href={data.url} target="_blank" rel="noreferrer">{data.url}</a> };

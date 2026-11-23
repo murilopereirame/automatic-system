@@ -16,6 +16,9 @@
  * step whose `if` is false is skipped, and a condition block can name the
  * step the run continues with (see `jump`).
  *
+ * A block with `pauseBefore` stops the run before it starts, like an approval
+ * block does after it ran (see docs/PAUSE_BEFORE.md).
+ *
  * A run keeps its own copy of the workflow definition. `applyDefinition`
  * switches that copy to a newer one (see apply-definition.ts).
  */
@@ -32,7 +35,7 @@ import { getStepType } from '../steps/index.js';
 import { planApply, type ApplyPlan } from './apply-definition.js';
 import { text, type StepRuntime } from '../steps/types.js';
 import { renderDeep } from '../template.js';
-import { MANUAL_TRIGGER, type Run, type SCOPE_NAMES, type StepConfig, type TriggerRef, type Workflow, type WorkflowDefinition } from '../types.js';
+import { MANUAL_TRIGGER, type Approval, type ApprovalKind, type Run, type SCOPE_NAMES, type StepConfig, type TriggerRef, type Workflow, type WorkflowDefinition } from '../types.js';
 
 /**
  * A run that is executing right now: how to stop its current step, whether
@@ -40,6 +43,8 @@ import { MANUAL_TRIGGER, type Run, type SCOPE_NAMES, type StepConfig, type Trigg
  * the current step is done (a step is never changed while it runs).
  */
 interface ActiveRun {
+  /** The run object the engine executes and saves. Changes made from outside while it runs must go to this object, or its next save overwrites them. */
+  run: Run;
   controller: AbortController;
   skipRequested: boolean;
   pendingDefinition?: WorkflowDefinition;
@@ -65,7 +70,7 @@ export async function executeRun(runId: string): Promise<void> {
   if (!run || activeRuns.has(runId)) return;
 
   const controller = new AbortController();
-  const active: ActiveRun = { controller, skipRequested: false };
+  const active: ActiveRun = { run, controller, skipRequested: false };
   activeRuns.set(runId, active);
   run.status = 'running';
   run.error = undefined;
@@ -121,22 +126,36 @@ async function executeStep(run: Run, workflow: Workflow, step: StepConfig, signa
     return run.stepIndex + 1;
   }
 
+  const runtime = buildRuntime(run, workflow, step, scope, signal);
+  if (step.pauseBefore && run.context.released !== step.id) return pauseBefore(run, step, stepType.preview?.(runtime) ?? {});
+  delete run.context.released;
+
   runs.addEvent(run.id, step.id, 'step_started', { type: step.type, name: step.name ?? stepType.title });
-  const result = await stepType.execute(buildRuntime(run, workflow, step, scope, signal));
+  const result = await stepType.execute(runtime);
   signal.throwIfAborted();
 
-  if ('pause' in result) {
-    const approval = runs.createApproval(run.id, step.id, result.pause.message);
-    run.status = 'waiting';
-    runs.saveRun(run);
-    runs.addEvent(run.id, step.id, 'approval_requested', { approvalId: approval.id, message: approval.message });
-    void sendNotification(run, { title: `${run.workflowName}: your action is needed`, message: approval.message });
-    return 'paused';
-  }
+  if ('pause' in result) return waitForPerson(run, step, result.pause.message);
 
   run.context.steps[step.id] = { output: result.output ?? null };
   runs.addEvent(run.id, step.id, 'step_finished', { output: result.output ?? null });
   return result.goTo ? jump(run, step, result.goTo) : run.stepIndex + 1;
+}
+
+/** Stops the run until a person answers in the UI (see `resolveApproval`). */
+function waitForPerson(run: Run, step: StepConfig, message: string, kind: ApprovalKind = 'approval', data: Record<string, unknown> = {}): 'paused' {
+  const approval = runs.createApproval(run.id, step.id, message, kind, data);
+  run.status = 'waiting';
+  runs.saveRun(run);
+  runs.addEvent(run.id, step.id, 'approval_requested', { approvalId: approval.id, kind, message: approval.message });
+  void sendNotification(run, { title: `${run.workflowName}: your action is needed`, message: approval.message });
+  return 'paused';
+}
+
+/** Stops the run before `step` starts. `preview` is what the person checks, e.g. the prompt of a Claude block. */
+function pauseBefore(run: Run, step: StepConfig, preview: Record<string, unknown>): 'paused' {
+  const name = step.name ?? step.id;
+  const message = typeof preview.prompt === 'string' ? `"${name}" is about to run. Check the prompt, change it if needed, and run the block.` : `"${name}" is about to run. Run it when you are ready.`;
+  return waitForPerson(run, step, message, 'before_step', preview);
 }
 
 /** The values the current step can read. `previous` is the block right above it in the list. */
@@ -231,13 +250,14 @@ function finish(run: Run, status: 'succeeded' | 'failed' | 'cancelled', error?: 
  *  - rejected with "On reject, go back to" configured: resume at that step, with the comment as feedback for Claude
  *  - rejected otherwise: the run ends as cancelled
  */
-export function resolveApproval(approvalId: string, decision: 'approved' | 'rejected', comment: string): void {
+export function resolveApproval(approvalId: string, decision: 'approved' | 'rejected', comment: string, answer: ApprovalAnswer = {}): void {
   const approval = runs.getApproval(approvalId);
   if (!approval || approval.status !== 'pending') throw new Error('This approval is no longer pending');
   const run = runs.getRun(approval.runId);
   if (!run || run.status !== 'waiting') throw new Error('The run is not waiting for approval');
 
   const step = run.definition.steps[run.stepIndex];
+  if (approval.kind === 'before_step') return releaseStep(run, step, approval, decision, comment, answer);
   runs.resolveApproval(approvalId, decision, comment);
   run.context.steps[step.id] = { output: { decision, comment } };
   runs.addEvent(run.id, step.id, 'approval_resolved', { approvalId, decision, comment });
@@ -252,6 +272,61 @@ export function resolveApproval(approvalId: string, decision: 'approved' | 'reje
   }
   runs.saveRun(run);
   void executeRun(run.id);
+}
+
+/** What a person can hand over with their answer, besides the comment. */
+export interface ApprovalAnswer {
+  /** For a pause before a "Run Claude" block: the prompt to send instead of the one shown. */
+  prompt?: string;
+}
+
+/**
+ * Answers a pause before a block.
+ *  - approved: the block runs now, with the edited prompt if one was given (used for this start only)
+ *  - rejected: the run ends as cancelled
+ */
+function releaseStep(run: Run, step: StepConfig, approval: Approval, decision: 'approved' | 'rejected', comment: string, answer: ApprovalAnswer): void {
+  const edited = decision === 'approved' && answer.prompt !== undefined && answer.prompt !== approval.data.prompt;
+  if (edited && !answer.prompt!.trim()) throw new Error('The prompt cannot be empty');
+  runs.resolveApproval(approval.id, decision, comment);
+  runs.addEvent(run.id, step.id, 'approval_resolved', { approvalId: approval.id, kind: approval.kind, decision, comment });
+  if (decision === 'rejected') return finish(run, 'cancelled', `Stopped before "${step.name ?? step.id}"${comment ? `: ${comment}` : ''}`);
+
+  run.context.released = step.id;
+  if (edited) {
+    run.context.promptOnce = { ...run.context.promptOnce, [step.id]: answer.prompt! };
+    runs.addEvent(run.id, step.id, 'prompt_edited', { when: 'before run' });
+  }
+  runs.saveRun(run);
+  void executeRun(run.id);
+}
+
+/**
+ * Sets (or with `null` clears) the prompt a "Run Claude" block of this run uses
+ * instead of the workflow's, every time it starts from now on. It is a template,
+ * like the workflow's prompt. A block that is running right now keeps the
+ * prompt it started with; the change applies to its next start.
+ */
+export function setPromptOverride(runId: string, stepId: string, prompt: string | null): Run {
+  // A run that is executing is changed in the engine's own copy, which it saves after each block.
+  const run = activeRuns.get(runId)?.run ?? runs.getRun(runId);
+  if (!run) throw new Error('Run not found');
+  if (run.status === 'succeeded') throw new Error('This run has finished');
+  const step = run.definition.steps.find((candidate) => candidate.id === stepId);
+  if (!step) throw new Error(`This run has no block "${stepId}"`);
+  if (step.type !== 'claude') throw new Error('Only "Run Claude" blocks have a prompt');
+
+  const overrides = { ...run.context.promptOverrides };
+  if (prompt === null) {
+    delete overrides[stepId];
+  } else {
+    if (!prompt.trim()) throw new Error('The prompt cannot be empty');
+    overrides[stepId] = prompt;
+  }
+  run.context.promptOverrides = overrides;
+  runs.saveRun(run);
+  runs.addEvent(run.id, stepId, prompt === null ? 'prompt_override_cleared' : 'prompt_override_set', {});
+  return run;
 }
 
 export function cancelRun(runId: string): void {

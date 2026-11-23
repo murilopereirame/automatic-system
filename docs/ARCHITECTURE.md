@@ -82,6 +82,8 @@ stateDiagram-v2
     [*] --> queued: any trigger fires
     queued --> running
     running --> waiting: approval block
+    running --> waiting: block with pauseBefore
+    waiting --> running: Run block (same block, maybe with an edited prompt)
     waiting --> running: approved (next block)
     waiting --> running: rejected (go back with feedback)
     waiting --> cancelled: rejected (no go-back block)
@@ -130,6 +132,11 @@ failed. Resuming after an approval and retrying after a failure are therefore
 the same operation: continue from `stepIndex`. A retry also sets the
 `maxRepeats` counters of the condition blocks back to zero, so a run that
 failed because it had gone back too often can go back again.
+
+A block with `pauseBefore` waits before it starts, with `stepIndex` already
+on it. **Run block** sets `context.released` to the block's id so that the
+next attempt starts it instead of pausing again; the marker is removed as the
+block starts. See [PAUSE_BEFORE.md](PAUSE_BEFORE.md).
 
 A run keeps a copy of the workflow definition it started with, so editing a
 workflow never changes runs that are in flight, unless you apply the edits to

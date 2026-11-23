@@ -62,6 +62,7 @@ steps:                       # the blocks, in order
     type: claude
     name: Implement the task
     if: "trigger.task.status != 'done'"   # optional condition
+    pauseBefore: true                     # optional: wait for me, and let me edit the prompt
     with: { prompt: "..." }
 
 history: []                  # earlier versions, only in "Export with history"
@@ -325,7 +326,9 @@ notifications:
 Every block has an `id` (unique, used in templates), a `type`, an optional
 `name` and its settings under `with`. A block may also have an `if`
 expression: when it is false the run skips the block. See
-[EXPRESSIONS.md](EXPRESSIONS.md).
+[EXPRESSIONS.md](EXPRESSIONS.md). With `pauseBefore: true` the run waits for
+you before the block starts; on a `claude` block you can edit the prompt
+there. See [PAUSE_BEFORE.md](PAUSE_BEFORE.md).
 
 | Type | What it does | Output |
 |------|--------------|--------|

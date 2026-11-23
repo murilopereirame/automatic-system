@@ -96,6 +96,9 @@ function open(): DatabaseSync {
   // The current version of a workflow, and the version a run executes. 0 means "from before versions existed".
   addColumn(database, 'workflows', 'version', 'INTEGER NOT NULL DEFAULT 0');
   addColumn(database, 'runs', 'workflow_version', 'INTEGER');
+  // What an approval is about (see ApprovalKind) and what it shows, e.g. the prompt of a Claude block it paused before.
+  addColumn(database, 'approvals', 'kind', "TEXT NOT NULL DEFAULT 'approval'");
+  addColumn(database, 'approvals', 'data', "TEXT NOT NULL DEFAULT '{}'");
   return database;
 }
 

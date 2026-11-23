@@ -1,7 +1,7 @@
 /** JSON API used by the web UI. Every route here requires authentication. */
 import type { FastifyInstance } from 'fastify';
 import { planApply } from '../engine/apply-definition.js';
-import { applyDefinition, cancelRun, resolveApproval, retryRun, skipStep, startRun } from '../engine/engine.js';
+import { applyDefinition, cancelRun, resolveApproval, retryRun, setPromptOverride, skipStep, startRun } from '../engine/engine.js';
 import { HttpError } from '../errors.js';
 import { applyInputs } from '../inputs.js';
 import { parseDefinition, parseFormula, toFormula } from '../formula.js';
@@ -298,6 +298,20 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
+  /** Sets the prompt a "Run Claude" block of this run uses instead of the workflow's (see docs/PAUSE_BEFORE.md). */
+  app.put<{ Params: { id: string; stepId: string } }>('/runs/:id/prompts/:stepId', async (request) => {
+    const prompt = (request.body as any)?.prompt;
+    if (typeof prompt !== 'string') throw new HttpError(400, 'prompt must be text');
+    runOr404(request.params.id);
+    return conflictOnError(() => setPromptOverride(request.params.id, request.params.stepId, prompt));
+  });
+
+  /** Goes back to the workflow's prompt for that block. */
+  app.delete<{ Params: { id: string; stepId: string } }>('/runs/:id/prompts/:stepId', async (request) => {
+    runOr404(request.params.id);
+    return conflictOnError(() => setPromptOverride(request.params.id, request.params.stepId, null));
+  });
+
   /** Server-sent events: everything that happens in any run, for live updates. */
   app.get('/stream', (request, reply) => {
     reply.hijack();
@@ -321,10 +335,11 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
   });
 
   app.post<IdParams>('/approvals/:id/resolve', async (request) => {
-    const { decision, comment } = (request.body ?? {}) as { decision?: string; comment?: string };
+    const { decision, comment, prompt } = (request.body ?? {}) as { decision?: string; comment?: string; prompt?: unknown };
     if (decision !== 'approved' && decision !== 'rejected') throw new HttpError(400, 'decision must be "approved" or "rejected"');
+    if (prompt !== undefined && typeof prompt !== 'string') throw new HttpError(400, 'prompt must be text');
     try {
-      resolveApproval(request.params.id, decision, String(comment ?? ''));
+      resolveApproval(request.params.id, decision, String(comment ?? ''), { prompt });
     } catch (error) {
       throw new HttpError(409, (error as Error).message);
     }

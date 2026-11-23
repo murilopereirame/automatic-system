@@ -139,8 +139,12 @@ export const api = {
   applyToRuns: (workflowId: string) => request<{ runId: string; deferred: boolean }[]>('POST', `/workflows/${workflowId}/apply-to-runs`, {}),
 
   pendingApprovals: () => request<PendingApproval[]>('GET', '/approvals?status=pending'),
-  resolveApproval: (id: string, decision: 'approved' | 'rejected', comment: string) =>
-    request('POST', `/approvals/${id}/resolve`, { decision, comment }),
+  /** `prompt` answers a pause before a "Run Claude" block with the prompt to send instead. */
+  resolveApproval: (id: string, decision: 'approved' | 'rejected', comment: string, prompt?: string) =>
+    request('POST', `/approvals/${id}/resolve`, { decision, comment, prompt }),
+  /** The prompt a "Run Claude" block of this run uses instead of the workflow's. See docs/PAUSE_BEFORE.md. */
+  setRunPrompt: (runId: string, stepId: string, prompt: string) => request<Run>('PUT', `/runs/${runId}/prompts/${stepId}`, { prompt }),
+  clearRunPrompt: (runId: string, stepId: string) => request<Run>('DELETE', `/runs/${runId}/prompts/${stepId}`),
 
   secrets: () => request<string[]>('GET', '/secrets'),
   setSecret: (name: string, value: string) => request('PUT', `/secrets/${name}`, { value }),

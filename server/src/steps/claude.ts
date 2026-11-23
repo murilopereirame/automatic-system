@@ -4,6 +4,7 @@
  */
 import { config } from '../config.js';
 import { mcpConfigPath } from '../sandbox/environment.js';
+import { renderString } from '../template.js';
 import { blockCwd, cwdField, flag, text, type StepRuntime, type StepType } from './types.js';
 
 interface ClaudeResult {
@@ -56,13 +57,37 @@ function buildArgs(runtime: StepRuntime, prompt: string, cwd: string): string[] 
   return args;
 }
 
-/** A rejected approval hands its comment to the next Claude step, once. */
-function promptFor(runtime: StepRuntime): string {
-  const { context, params } = runtime;
-  if (!context.feedback) return text(params, 'prompt');
-  const feedback = context.feedback;
-  delete context.feedback;
-  return `A human reviewed your work and asked for changes before continuing. Address this feedback:\n\n${feedback}`;
+/** Where the prompt of a Claude block came from. Logged with the prompt, so the run shows why it differs from the workflow. */
+export type PromptSource = 'edited before run' | 'reviewer feedback' | 'edited for this run' | 'workflow';
+
+/**
+ * The prompt this start of the block sends, first match wins:
+ *  1. the prompt a person confirmed when the run paused before this block (used once)
+ *  2. the comment of a rejected approval that sent the run back here (used once)
+ *  3. the prompt a person set for this block on the run page (a template, kept for the run)
+ *  4. the prompt configured in the workflow
+ * With `consume`, the one-time prompts (1 and 2) are removed from the run once read.
+ * The preview of a paused block reads without consuming. See docs/PAUSE_BEFORE.md.
+ */
+export function resolvePrompt(runtime: Pick<StepRuntime, 'context' | 'params' | 'scope' | 'step'>, consume: boolean): { prompt: string; source: PromptSource } {
+  const { context, params, scope, step } = runtime;
+  const once = context.promptOnce?.[step.id];
+  if (once !== undefined) {
+    if (consume) {
+      delete context.promptOnce![step.id];
+      // The person saw the feedback prompt at the pause and replaced it, so the feedback is used up too.
+      delete context.feedback;
+    }
+    return { prompt: once, source: 'edited before run' };
+  }
+  if (context.feedback) {
+    const feedback = context.feedback;
+    if (consume) delete context.feedback;
+    return { prompt: `A human reviewed your work and asked for changes before continuing. Address this feedback:\n\n${feedback}`, source: 'reviewer feedback' };
+  }
+  const override = context.promptOverrides?.[step.id];
+  if (override !== undefined) return { prompt: renderString(override, scope), source: 'edited for this run' };
+  return { prompt: text(params, 'prompt'), source: 'workflow' };
 }
 
 export const claudeStep: StepType = {
@@ -87,11 +112,14 @@ export const claudeStep: StepType = {
       help: `${cwdField.help} Claude keeps one conversation per folder: to continue a conversation, run the Claude blocks in the same folder (with several repositories, use "." and tell Claude which folder to work in).`,
     },
   ],
+  preview(runtime) {
+    return resolvePrompt(runtime, false);
+  },
   async execute(runtime) {
-    const prompt = promptFor(runtime);
+    const { prompt, source } = resolvePrompt(runtime, true);
     if (!prompt) throw new Error('No prompt configured');
     const cwd = blockCwd(runtime);
-    runtime.log('claude_prompt', { prompt });
+    runtime.log('claude_prompt', { prompt, source });
 
     let final: ClaudeResult | undefined;
     let pending = '';
