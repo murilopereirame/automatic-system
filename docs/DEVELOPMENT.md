@@ -30,6 +30,7 @@ Use the container for anything you do not fully trust.
 | `AUTOWORKER_PORT`, `AUTOWORKER_HOST` | `8080`, `0.0.0.0` | Listen address |
 | `AUTOWORKER_DATA_DIR` | `./data` | Database directory |
 | `AUTOWORKER_WORKSPACES_DIR` | `<data>/workspaces` | Run workspaces |
+| `AUTOWORKER_OUTPUTS_DIR` | `<data>/outputs` | Output folders of runs, one per run ([OUTPUTS.md](OUTPUTS.md)) |
 | `AUTOWORKER_AGENT_HOME` | `<data>/agent-home` | Home of the agent user |
 | `AUTOWORKER_AGENT_UID`, `AUTOWORKER_AGENT_GID` | unset | Run agent processes as this user |
 | `AUTOWORKER_FORMULAS_DIR` | unset | Formula files imported at startup |
@@ -100,6 +101,7 @@ All routes under `/api` need the session cookie or `Authorization: Bearer <token
 | `POST /api/formulas/import` | Import a formula (YAML body) |
 | `GET /api/runs`, `GET /api/runs/:id` | Runs; one run with its approvals |
 | `GET /api/runs/:id/events` | The run's log, newest page first: `{ events, hasOlder }`. `?before=<event id>` pages back, `?stepId=` keeps one block, `?limit=` (default 300, max 1000) |
+| `GET /api/runs/:id/outputs`, `GET /api/runs/:id/outputs/file?path=`, `GET /api/runs/:id/outputs/archive` | Files in the run's output folder; one file, or all as `.tar.gz` ([OUTPUTS.md](OUTPUTS.md)) |
 | `POST /api/runs/:id/cancel`, `POST /api/runs/:id/retry`, `POST /api/runs/:id/skip` | Control a run: stop it, continue from the block it stopped at, or pass over that block |
 | `GET /api/runs/:id/apply-latest`, `POST /api/runs/:id/apply-latest` | Preview, or apply, switching a run to the saved workflow. `GET /api/runs/:id` says `outdated: true` when there is something to apply |
 | `GET /api/workflows/:id/outdated-runs`, `POST /api/workflows/:id/apply-to-runs` | Open runs still on an older definition, and applying the saved one to all of them |

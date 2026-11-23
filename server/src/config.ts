@@ -20,6 +20,11 @@ export const config = {
   dataDir,
   /** One sub directory per run. Owned by the agent user. */
   workspacesDir: path.resolve(env.AUTOWORKER_WORKSPACES_DIR ?? path.join(dataDir, 'workspaces')),
+  /**
+   * One sub directory per run for files meant to leave the container (see sandbox/outputs.ts).
+   * Kept apart from the workspaces, so cleaning those up never removes outputs. Owned by the agent user.
+   */
+  outputsDir: path.resolve(env.AUTOWORKER_OUTPUTS_DIR ?? path.join(dataDir, 'outputs')),
   /** Home of the agent user: Claude config, memory and installed runtimes. */
   agentHome: path.resolve(env.AUTOWORKER_AGENT_HOME ?? path.join(dataDir, 'agent-home')),
   /** Formula files in this directory are imported at startup. */

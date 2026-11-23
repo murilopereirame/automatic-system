@@ -27,6 +27,7 @@ flowchart TB
             SH[Web shell]
         end
         WS[/workspaces/]
+        OUT[/outputs: files to download/]
         HOME[/agent home: memory, runtimes/]
     end
 
@@ -43,6 +44,7 @@ flowchart TB
     STEPS -->|API calls| EXT
     SBX -->|spawn as agent| Agent
     Agent --- WS
+    Agent --- OUT
     Agent --- HOME
 ```
 
@@ -290,6 +292,7 @@ erDiagram
 |----------------------|-------|---------|
 | `/data` | server | Database with workflows, runs and encrypted secrets. The agent user cannot read it |
 | `/workspaces/<run id>` | agent | Working directory of a run, including the cloned repository |
+| `/outputs/<run id>` | agent | Output folder of a run (`$AUTOWORKER_OUTPUT_DIR`): files meant to be downloaded. Kept when workspaces are cleaned up. See [OUTPUTS.md](OUTPUTS.md) |
 | `/home/agent/workflows/<workflow id>/claude` | agent | Claude config directory of a workflow: `CLAUDE.md`, memory, sessions |
 | `/home/agent/workflows/<workflow id>/mcp.json` | agent | MCP servers from the formula |
 | `/home/agent/workflows/<workflow id>/mise.toml` | agent | The runtimes of the formula, rewritten at the start of every run |

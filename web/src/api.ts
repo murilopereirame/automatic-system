@@ -1,5 +1,5 @@
 /** Typed access to the server API. The domain types are shared with the server. */
-import type { Approval, FieldSpec, Run, RunEvent, Settings, Workflow, WorkflowDefinition, WorkflowVersion } from '../../server/src/types.ts';
+import type { Approval, FieldSpec, OutputListing, Run, RunEvent, Settings, Workflow, WorkflowDefinition, WorkflowVersion } from '../../server/src/types.ts';
 import type { Diff } from '../../server/src/diff.ts';
 
 export type { Diff, DiffLine } from '../../server/src/diff.ts';
@@ -130,6 +130,10 @@ export const api = {
     if (options.stepId) query.set('stepId', options.stepId);
     return request<RunEventPage>('GET', `/runs/${id}/events?${query}`);
   },
+  /** What the run put in its output folder. Files download through `outputFileUrl` and `outputArchiveUrl`. */
+  runOutputs: (id: string) => request<OutputListing>('GET', `/runs/${id}/outputs`),
+  outputFileUrl: (id: string, file: string) => `/api/runs/${id}/outputs/file?path=${encodeURIComponent(file)}`,
+  outputArchiveUrl: (id: string) => `/api/runs/${id}/outputs/archive`,
   cancelRun: (id: string) => request('POST', `/runs/${id}/cancel`, {}),
   retryRun: (id: string) => request('POST', `/runs/${id}/retry`, {}),
   skipStep: (id: string) => request('POST', `/runs/${id}/skip`, {}),

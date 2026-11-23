@@ -141,6 +141,7 @@ sandbox from the inside. The build fails unless all of these hold:
 - the login token, the secret key and the gateway secret are neither in the agent's environment nor readable through `/proc`
 - a direct connection to the internet or to a metadata address fails
 - a host that is not on the allow list is refused and reported, and an allowed host is reachable
+- runs get a writable output folder outside the workspaces, and a link in it cannot download the database
 - the bundled tools are installed
 
 Run it yourself against a running deployment:
@@ -177,6 +178,10 @@ Be aware of what the sandbox does not do:
 - **Claude runs with `bypassPermissions` by default**, because nobody is there
   to answer permission prompts. The sandbox is the control. Tighten
   `permissionMode` or `allowedTools` on a Claude block where you want less.
+- **Output files are read as the agent user.** The run page downloads files
+  from the run's output folder, but the server lists and reads them as uid
+  10001 and only serves regular files, as attachments. A link to the
+  database gets a 404. See [OUTPUTS.md](OUTPUTS.md#security).
 - **The login token is a single shared credential.** Use a long random value
   and serve the UI over TLS when it leaves localhost.
 

@@ -31,6 +31,7 @@ flowchart LR
 - **Human in the loop.** Approval blocks pause a run. Reject with a comment and Claude reworks it.
 - **Edit while it runs.** Apply a saved workflow to runs that already started: finished blocks keep their results, the rest use the new blocks.
 - **Full visibility.** Every run has a live log: trigger, Claude messages and tool calls, commands, test results, notifications, approvals.
+- **Output files.** Every run has a folder outside the repository for screenshots, reports and artifacts, downloadable from the run page.
 - **A shell next to Claude.** Open a terminal in the run's workspace, as the same user Claude runs as.
 - **Sandboxed.** Claude runs as an unprivileged user in a hardened container, only sees the secrets a workflow exposes to it, and can only connect to hosts on the workflow's allow list.
 
@@ -43,6 +44,7 @@ flowchart LR
 | [docs/UI.md](docs/UI.md) | The web UI: pages, editor, run view, with screenshots |
 | [docs/FORMULA.md](docs/FORMULA.md) | Formula reference: triggers, environment, notifications, blocks, templates |
 | [docs/VERSIONING.md](docs/VERSIONING.md) | Workflow versions: history, diff, rollback, history in formulas |
+| [docs/OUTPUTS.md](docs/OUTPUTS.md) | The output folder of a run: where it is, how Claude learns about it, downloads, security |
 | [docs/EXPRESSIONS.md](docs/EXPRESSIONS.md) | Conditions: skipping blocks, if/else, and the expression language |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Running it with Docker, first workflow, volumes, updating, CI/CD |
 | [docs/SECURITY.md](docs/SECURITY.md) | How the sandbox works, what is verified on every build, known limits |
