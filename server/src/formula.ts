@@ -7,6 +7,7 @@
  * Secret values are never part of a formula, only their names.
  */
 import YAML from 'yaml';
+import { config } from './config.js';
 import { errorMessage, HttpError } from './errors.js';
 import { checkExpression } from './expression.js';
 import { END_OF_RUN } from './steps/condition.js';
@@ -14,7 +15,7 @@ import { parseInputs } from './inputs.js';
 import { getStepType } from './steps/index.js';
 import type { HistoryEntry, WorkflowInput } from './store/workflows.js';
 import { getTriggerType } from './triggers/index.js';
-import { CLEANUP_WHEN, cleanupPolicy, emptyEnvironment, SCOPE_NAMES, type CleanupPolicy, type Environment, type MemoryFile, type NotificationWebhook, type SkillSpec, type StepConfig, type TriggerConfig, type VersionSource, type Workflow, type WorkflowDefinition, type WorkflowVersion } from './types.js';
+import { CLEANUP_WHEN, cleanupPolicy, emptyEnvironment, SCOPE_NAMES, type CleanupPolicy, type Environment, type MemoryFile, type NotificationWebhook, type ServiceSpec, type SkillSpec, type StepConfig, type TriggerConfig, type VersionSource, type Workflow, type WorkflowDefinition, type WorkflowVersion } from './types.js';
 
 export const FORMULA_API_VERSION = 'autoworker/v1';
 
@@ -63,8 +64,18 @@ function parseEnvironment(input: unknown): Environment {
     const ports = asArray(service.ports, `ports of service "${name}"`).map(Number);
     if (ports.some((port) => !Number.isInteger(port) || port < 1 || port > 65535)) invalid(`service "${name}" has an invalid port`);
     const env = Object.entries(asObject(service.env, `env of service "${name}"`)).map(([key, value]) => [key, String(value)]);
-    return { name, image: String(service.image), ports, env: Object.fromEntries(env), command: service.command ? String(service.command) : undefined };
+    if (service.forwardToLocalhost !== undefined && typeof service.forwardToLocalhost !== 'boolean') invalid(`forwardToLocalhost of service "${name}" must be true or false`);
+    return {
+      name,
+      image: String(service.image),
+      ports,
+      env: Object.fromEntries(env),
+      command: service.command ? String(service.command) : undefined,
+      // Only written when set, so formulas of services without a forward stay as they were.
+      ...(service.forwardToLocalhost === true && { forwardToLocalhost: true }),
+    };
   });
+  checkForwardPorts(environment.services);
   environment.network = { allow: asArray(asObject(raw.network, 'environment.network').allow, 'environment.network.allow').map(String) };
   environment.env = Object.fromEntries(Object.entries(asObject(raw.env, 'environment.env')).map(([key, value]) => [key, String(value)]));
   environment.secrets = asArray(raw.secrets, 'environment.secrets').map(String);
@@ -74,6 +85,23 @@ function parseEnvironment(input: unknown): Environment {
     return { source: String(mount.source), target: String(mount.target), readOnly: mount.readOnly === true };
   });
   return environment;
+}
+
+/**
+ * A localhost forward takes a port on the container's loopback interface
+ * (see sandbox/forwards.ts). It cannot be the server's own port, and two
+ * services of one workflow cannot both claim the same port.
+ */
+function checkForwardPorts(services: ServiceSpec[]): void {
+  const claimed = new Map<number, string>();
+  for (const service of services.filter((entry) => entry.forwardToLocalhost)) {
+    for (const port of service.ports) {
+      if (port === config.port) invalid(`service "${service.name}" cannot forward port ${port} to localhost: the Auto Worker server listens there`);
+      const other = claimed.get(port);
+      if (other !== undefined && other !== service.name) invalid(`services "${other}" and "${service.name}" both forward port ${port} to localhost`);
+      claimed.set(port, service.name);
+    }
+  }
 }
 
 function parseNotifications(input: unknown): NotificationWebhook[] {
