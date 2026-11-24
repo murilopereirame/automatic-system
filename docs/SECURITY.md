@@ -182,6 +182,10 @@ Be aware of what the sandbox does not do:
   from the run's output folder, but the server lists and reads them as uid
   10001 and only serves regular files, as attachments. A link to the
   database gets a 404. See [OUTPUTS.md](OUTPUTS.md#security).
+- **Text from Claude is shown, never run.** Claude's messages, prompts and
+  approval messages are rendered as Markdown without HTML: raw tags show as
+  text, only http(s)/mailto links are kept and images are not loaded. See
+  [MARKDOWN.md](MARKDOWN.md#why-it-is-safe).
 - **The login token is a single shared credential.** Use a long random value
   and serve the UI over TLS when it leaves localhost.
 

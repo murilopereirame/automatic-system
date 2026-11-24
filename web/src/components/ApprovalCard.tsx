@@ -7,6 +7,8 @@
 import { useState } from 'react';
 import { api, type Approval } from '../api.ts';
 import { ErrorNote, TimeAgo } from './common.tsx';
+import { Markdown } from './Markdown.tsx';
+import { PromptEditor } from './PromptEditor.tsx';
 
 interface Props {
   approval: Approval;
@@ -44,11 +46,11 @@ export function ApprovalCard({ approval, title, runLink, rejectHint, onResolved 
           {beforeStep ? 'paused' : 'asked'} <TimeAgo time={approval.createdAt} />
         </span>
       </header>
-      <p className="approval-message">{approval.message}</p>
+      <Markdown className="approval-message" text={approval.message} />
       {shownPrompt !== undefined && (
         <div className="field">
           <span>Prompt for Claude{prompt !== shownPrompt && ' (edited)'}</span>
-          <textarea className="prompt-editor" rows={8} value={prompt} onChange={(event) => setPrompt(event.target.value)} />
+          <PromptEditor value={prompt} onChange={setPrompt} />
           <small>
             {source ? `${source} ` : ''}Your edit is sent as written, for this start of the block only.
             {prompt !== shownPrompt && (

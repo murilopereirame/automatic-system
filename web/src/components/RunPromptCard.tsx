@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { api, type Run, type StepConfig } from '../api.ts';
 import { ErrorNote } from './common.tsx';
+import { PromptEditor } from './PromptEditor.tsx';
 
 interface Props {
   run: Run;
@@ -38,7 +39,7 @@ export function RunPromptCard({ run, step, onSaved }: Props) {
         <strong>Prompt for this run</strong>
         <span className="muted">{override !== undefined ? 'edited for this run' : 'from the workflow'}</span>
       </summary>
-      <textarea className="prompt-editor" rows={6} value={draft} onChange={(event) => setDraft(event.target.value)} />
+      <PromptEditor value={draft} onChange={setDraft} rows={6} />
       <p className="muted">
         {timingNote(run, step)} Use <code>{'{{trigger...}}'}</code> and <code>{'{{steps.<id>.output...}}'}</code> like in the workflow. Only this run changes.
       </p>
