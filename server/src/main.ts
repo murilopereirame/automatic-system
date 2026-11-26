@@ -7,6 +7,7 @@ import { errorMessage } from './errors.js';
 import { importFormula } from './http/api.js';
 import { buildServer } from './http/server.js';
 import { agentMkdir } from './sandbox/agent.js';
+import { closeAllForwards, syncForwards } from './sandbox/forwards.js';
 import { startAllTriggers, stopAllTriggers } from './triggers/index.js';
 
 /** Workflows defined as code: every formula file in the formulas directory is imported at startup. */
@@ -35,6 +36,7 @@ async function main(): Promise<void> {
   recoverInterruptedRuns();
   await importFormulaFiles();
   startAllTriggers();
+  await syncForwards();
 
   const app = await buildServer();
   await app.listen({ host: config.host, port: config.port });
@@ -45,6 +47,7 @@ async function main(): Promise<void> {
 
   const shutdown = async () => {
     stopAllTriggers();
+    await closeAllForwards();
     await app.close();
     process.exit(0);
   };

@@ -43,6 +43,8 @@ export interface PendingApproval extends Approval {
 export interface Requirements {
   mounts: { target: string; present: boolean }[];
   services: { name: string; port: number; reachable: boolean }[];
+  /** Localhost forwards of services with `forwardToLocalhost` (see docs/FORWARDS.md). */
+  forwards: { localPort: number; host: string; port: number; listening: boolean; error?: string }[];
 }
 
 export interface SandboxStatus {

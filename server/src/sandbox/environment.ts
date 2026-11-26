@@ -7,6 +7,7 @@
 import path from 'node:path';
 import net from 'node:net';
 import type { MemoryFile, MountSpec, ServiceSpec, SkillSpec, Workflow } from '../types.js';
+import { ensureForwards } from './forwards.js';
 import { agentExec, agentExecOrThrow, agentMkdir, agentReadFile, agentWriteFile, claudeConfigDir, workflowEnv, workflowHome } from './agent.js';
 
 export function mcpConfigPath(workflowId: string): string {
@@ -91,6 +92,7 @@ export async function prepareEnvironment(workflow: Workflow, onOutput: (chunk: s
   await writeMemory(workflow, { overwrite: false });
   await writeMcpConfig(workflow);
   await waitForServices(workflow.definition.environment.services, signal);
+  await ensureForwards(workflow);
   await installRuntimes(workflow, onOutput, signal);
 }
 

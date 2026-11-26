@@ -65,7 +65,7 @@ flowchart TB
 | `server/src/engine/apply-definition.ts` | What switching a run to an edited workflow changes, and where it continues |
 | `server/src/steps/` | One file per block type, registered in `steps/index.ts` |
 | `server/src/triggers/` | One file per trigger type, plus the manager in `triggers/index.ts` |
-| `server/src/sandbox/` | Running processes as the agent user, preparing runtimes, memory and MCP config |
+| `server/src/sandbox/` | Running processes as the agent user, preparing runtimes, memory and MCP config, localhost forwards for services ([FORWARDS.md](FORWARDS.md)) |
 | `server/src/notify.ts` | Notification webhooks |
 | `server/src/egress.ts` | The egress allow list (what is on it, what was blocked) |
 | `server/src/gateway/` | The gateway container: UI relay and allow-list proxy. Shares no state with the server |

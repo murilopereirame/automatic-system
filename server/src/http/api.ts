@@ -8,6 +8,7 @@ import { applyInputs } from '../inputs.js';
 import { parseDefinition, parseFormula, toFormula } from '../formula.js';
 import { config } from '../config.js';
 import { recentlyBlocked } from '../egress.js';
+import { forwardsOf, forwardStatus, syncForwards } from '../sandbox/forwards.js';
 import { checkMounts, checkServices, readMemory, readSkills, writeMemory } from '../sandbox/environment.js';
 import { archiveOutputs, listOutputs, readOutput } from '../sandbox/outputs.js';
 import * as runs from '../store/runs.js';
@@ -57,10 +58,11 @@ function workflowInput(body: any): workflows.WorkflowInput {
   };
 }
 
-/** Applies the side effects of a changed workflow: memory files on disk and the trigger watchers. */
+/** Applies the side effects of a changed workflow: memory files on disk, the trigger watchers and the localhost forwards. */
 async function afterWorkflowChange(workflow: Workflow): Promise<void> {
   await writeMemory(workflow, { overwrite: true });
   syncTriggers(workflow.id);
+  await syncForwards();
 }
 
 /**
@@ -191,6 +193,7 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
   app.delete<IdParams>('/workflows/:id', async (request) => {
     workflows.deleteWorkflow(request.params.id);
     syncTriggers(request.params.id);
+    await syncForwards();
     return { ok: true };
   });
 
@@ -215,8 +218,9 @@ export async function registerApi(app: FastifyInstance): Promise<void> {
 
   /** Which of the things a workflow expects from the deployment are actually there. */
   app.get<IdParams>('/workflows/:id/requirements', async (request) => {
-    const { mounts, services } = workflowOr404(request.params.id).definition.environment;
-    return { mounts: await checkMounts(mounts), services: await checkServices(services) };
+    const workflow = workflowOr404(request.params.id);
+    const { mounts, services } = workflow.definition.environment;
+    return { mounts: await checkMounts(mounts), services: await checkServices(services), forwards: forwardStatus(forwardsOf(workflow)) };
   });
 
   // ---- Formulas ------------------------------------------------------------

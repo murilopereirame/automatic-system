@@ -102,6 +102,12 @@ export interface ServiceSpec {
   ports: number[];
   env: Record<string, string>;
   command?: string;
+  /**
+   * Also listen on `localhost:<port>` inside the autoworker container and pipe
+   * each connection to `<name>:<port>`, for projects that only accept loopback
+   * URLs. Left out (false) for most services. See docs/FORWARDS.md.
+   */
+  forwardToLocalhost?: boolean;
 }
 
 export interface NetworkSpec {

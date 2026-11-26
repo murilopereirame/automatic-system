@@ -46,6 +46,7 @@ flowchart LR
 | [docs/VERSIONING.md](docs/VERSIONING.md) | Workflow versions: history, diff, rollback, history in formulas |
 | [docs/RUN-VALUES.md](docs/RUN-VALUES.md) | Adding values to a run while it is open, for the blocks after it |
 | [docs/OUTPUTS.md](docs/OUTPUTS.md) | The output folder of a run: where it is, how Claude learns about it, downloads, security |
+| [docs/FORWARDS.md](docs/FORWARDS.md) | Serving a service container on `localhost` for projects that only accept loopback URLs |
 | [docs/CLEANUP.md](docs/CLEANUP.md) | Deleting the files of finished runs, automatically or by hand |
 | [docs/EXPRESSIONS.md](docs/EXPRESSIONS.md) | Conditions: skipping blocks, if/else, and the expression language |
 | [docs/PAUSE_BEFORE.md](docs/PAUSE_BEFORE.md) | Pausing before a block, and editing Claude's prompt on a running run |

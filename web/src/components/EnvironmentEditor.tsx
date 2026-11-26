@@ -118,7 +118,8 @@ export function EnvironmentEditor({ environment, secretNames, requirements, egre
         <h2>Services</h2>
         <p className="muted">
           Helper containers the workflow needs, such as a database for tests. They run next to the sandbox as their own compose services, so the sandbox never needs access to Docker. Claude and commands reach them by name, for
-          example <code>mongo:27017</code>. A run waits for them and fails with a clear message when one is missing.
+          example <code>mongo:27017</code>. A run waits for them and fails with a clear message when one is missing. Tick “Also on localhost” when the project only accepts <code>localhost</code> URLs: the server then forwards{' '}
+          <code>localhost:&lt;port&gt;</code> to the service, for runs and the web shell.
         </p>
         <ListEditor items={environment.services} onChange={(services) => set({ services })} blank={(): ServiceSpec => ({ name: '', image: '', ports: [], env: {} })} addLabel="Add service">
           {(service, update) => (
@@ -134,6 +135,12 @@ export function EnvironmentEditor({ environment, secretNames, requirements, egre
                 defaultValue={Object.entries(service.env).map(([name, value]) => `${name}=${value}`).join(' ')}
                 onChange={(event) => update({ env: toEnv(event.target.value) })}
               />
+              <label className="field checkbox inline">
+                <input type="checkbox" checked={service.forwardToLocalhost === true} onChange={(event) => update({ forwardToLocalhost: event.target.checked || undefined })} />
+                <span>
+                  Also on <code>localhost</code>, for projects that only accept loopback URLs
+                </span>
+              </label>
               <span className="meta">
                 {service.ports.map((port) => {
                   const probe = requirements?.services.find((entry) => entry.name === service.name && entry.port === port);
@@ -144,6 +151,16 @@ export function EnvironmentEditor({ environment, secretNames, requirements, egre
                     </span>
                   );
                 })}
+                {service.forwardToLocalhost &&
+                  service.ports.map((port) => {
+                    const forward = requirements?.forwards?.find((entry) => entry.host === service.name && entry.port === port);
+                    if (!forward) return null;
+                    return (
+                      <span key={`forward-${port}`} className={forward.listening ? 'status status-succeeded' : 'status status-failed'} title={forward.error}>
+                        localhost:{forward.localPort} {forward.listening ? 'listening' : `not listening: ${forward.error}`}
+                      </span>
+                    );
+                  })}
               </span>
             </div>
           )}

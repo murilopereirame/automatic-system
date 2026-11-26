@@ -229,7 +229,7 @@ not checked against them. Formulas without `inputs` import as before.
 | `mcpServers` | MCP servers for Claude, in the format of the `mcpServers` object of a `.mcp.json` file. Use `${NAME}` to refer to environment variables and exposed secrets |
 | `memory` | Files for Claude's config directory, usually `CLAUDE.md`. They are written when the workflow is saved or imported. An export contains the files as they are on disk at that moment, so what Claude has learned travels with the formula |
 | `skills` | Claude Code skills, each a `name` and the `content` of its `SKILL.md`. Written to `skills/<name>/SKILL.md` in the workflow's Claude config directory. Like memory, an export contains the skills as they are on disk |
-| `services` | Helper containers such as a database for tests: `name`, `image`, `ports`, optional `env` and `command`. See [Services](#services) |
+| `services` | Helper containers such as a database for tests: `name`, `image`, `ports`, optional `env`, `command` and `forwardToLocalhost`. See [Services](#services) |
 | `network.allow` | Hosts the sandbox may connect to. See [Network](#network) |
 | `env` | Plain environment variables for Claude, commands and the web shell |
 | `secrets` | Names of stored secrets that are exposed as environment variables. Values are never part of a formula. After importing on a new deployment, add the values under Settings |
@@ -253,6 +253,11 @@ The Environment tab generates the compose snippet for the declared services
 and shows whether each port answers. A run waits up to a minute for its
 services and fails with a clear message when one is not deployed. Service
 containers sit on the internal network, so they have no internet access.
+
+For projects whose tests only accept `localhost` URLs, set
+`forwardToLocalhost: true` on the service. The server then also serves it on
+`localhost:<port>` inside the container, for runs and the web shell. See
+[FORWARDS.md](FORWARDS.md).
 
 ### Network
 

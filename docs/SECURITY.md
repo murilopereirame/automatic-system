@@ -59,7 +59,7 @@ Set in [`compose.yaml`](../compose.yaml):
 | `no-new-privileges` | `sudo`, `su` and any other setuid binary cannot raise privileges |
 | `read_only: true` | The image cannot be modified. Only the volumes and `/tmp` are writable |
 | No Docker socket, no `privileged`, no host namespaces | There is no path to the Docker daemon or to host processes |
-| `internal: true` network | The sandbox has no route to the internet, the host or other compose projects. Only the gateway and the workflow's service containers are reachable |
+| `internal: true` network | The sandbox has no route to the internet, the host or other compose projects. Only the gateway and the workflow's service containers are reachable. [Localhost forwards](FORWARDS.md) bind only to loopback and only reach declared services |
 | `pids_limit`, `mem_limit`, `cpus` | A runaway process cannot exhaust the host |
 | Port bound to `127.0.0.1` (on the gateway) | The UI is not exposed to the network unless you put a reverse proxy in front |
 
