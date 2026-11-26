@@ -6,6 +6,7 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { RunEvent } from '../api.ts';
 import { clipText, mergeOutput, TEXT_PREVIEW_CHARS } from '../run-log.ts';
+import { Markdown } from './Markdown.tsx';
 
 const json = (value: unknown) => JSON.stringify(value, null, 2);
 
@@ -30,7 +31,7 @@ function Collapsible({ summary, children }: { summary: ReactNode; children: () =
  * Text that may be huge (command output, tool results, payloads). Shows TEXT_PREVIEW_CHARS of it, the end
  * for output, and a button for the rest.
  */
-function LongText({ text, keep = 'start', as = 'pre' }: { text: string; keep?: 'start' | 'end'; as?: 'pre' | 'prose' }) {
+function LongText({ text, keep = 'start', as = 'pre' }: { text: string; keep?: 'start' | 'end'; as?: 'pre' | 'markdown' }) {
   const [full, setFull] = useState(false);
   const { shown, hidden } = full ? { shown: text, hidden: 0 } : clipText(text, TEXT_PREVIEW_CHARS, keep);
   // Output reads like a terminal: keep its box scrolled to the newest line unless the person scrolled up.
@@ -54,7 +55,7 @@ function LongText({ text, keep = 'start', as = 'pre' }: { text: string; keep?: '
         {shown}
       </pre>
     ) : (
-      <div className="prose">{shown}</div>
+      <Markdown text={shown} />
     );
   return (
     <>
@@ -81,7 +82,7 @@ function describe(event: RunEvent): { label: string; tone?: string; body: ReactN
       return { label: data.result ? 'Condition true' : 'Condition false', tone: data.result ? 'good' : 'attention', body: <><code>{data.expression}</code>{data.goTo ? ` → continues with ${data.goTo === '$end' ? 'the end of the run' : data.goTo}` : ''}</> };
     case 'claude_prompt':
       // `source` says why the prompt is not the workflow's (see docs/PAUSE_BEFORE.md). Older runs do not have it.
-      return { label: data.source && data.source !== 'workflow' ? `Prompt (${data.source})` : 'Prompt', body: <LongText as="prose" text={String(data.prompt ?? '')} /> };
+      return { label: data.source && data.source !== 'workflow' ? `Prompt (${data.source})` : 'Prompt', body: <LongText as="markdown" text={String(data.prompt ?? '')} /> };
     case 'prompt_edited':
       return { label: 'Prompt edited before run', body: 'You changed the prompt at the pause. Claude gets your version this time.' };
     case 'prompt_override_set':
@@ -89,7 +90,7 @@ function describe(event: RunEvent): { label: string; tone?: string; body: ReactN
     case 'prompt_override_cleared':
       return { label: 'Prompt reset', body: "This block uses the workflow's prompt again." };
     case 'claude_text':
-      return { label: 'Claude', tone: 'claude', body: <LongText as="prose" text={String(data.text ?? '')} /> };
+      return { label: 'Claude', tone: 'claude', body: <LongText as="markdown" text={String(data.text ?? '')} /> };
     case 'claude_tool':
       return { label: 'Tool call', body: <Collapsible summary={<code>{data.tool}</code>}>{() => <LongText text={json(data.input)} />}</Collapsible> };
     case 'claude_tool_result':
@@ -103,7 +104,7 @@ function describe(event: RunEvent): { label: string; tone?: string; body: ReactN
     case 'notification':
       return { label: 'Notification', body: `${data.message} (${data.delivered?.length ? `sent to ${data.delivered.join(', ')}` : 'no webhook reached'})` };
     case 'approval_requested':
-      return { label: 'Waiting for you', tone: 'attention', body: data.message };
+      return { label: 'Waiting for you', tone: 'attention', body: <Markdown text={String(data.message ?? '')} /> };
     case 'approval_resolved':
       if (data.kind === 'before_step') return { label: data.decision === 'approved' ? 'Released' : 'Stopped', tone: data.decision === 'approved' ? 'good' : 'bad', body: data.decision === 'approved' ? 'You let the block run.' : data.comment || 'You stopped the run before this block.' };
       return { label: data.decision === 'approved' ? 'Approved' : 'Rejected', tone: data.decision === 'approved' ? 'good' : 'bad', body: data.comment || 'No comment' };

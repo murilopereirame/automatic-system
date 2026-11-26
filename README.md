@@ -49,6 +49,7 @@ flowchart LR
 | [docs/FORWARDS.md](docs/FORWARDS.md) | Serving a service container on `localhost` for projects that only accept loopback URLs |
 | [docs/CLEANUP.md](docs/CLEANUP.md) | Deleting the files of finished runs, automatically or by hand |
 | [docs/EXPRESSIONS.md](docs/EXPRESSIONS.md) | Conditions: skipping blocks, if/else, and the expression language |
+| [docs/MARKDOWN.md](docs/MARKDOWN.md) | How Claude's messages are rendered as Markdown, and why that is safe |
 | [docs/PAUSE_BEFORE.md](docs/PAUSE_BEFORE.md) | Pausing before a block, and editing Claude's prompt on a running run |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Running it with Docker, first workflow, volumes, updating, CI/CD |
 | [docs/SECURITY.md](docs/SECURITY.md) | How the sandbox works, what is verified on every build, known limits |

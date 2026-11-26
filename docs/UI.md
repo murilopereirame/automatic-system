@@ -81,6 +81,8 @@ same payload under **Triggered**. Inputs are described in
 - The list on the left shows every block and its state. Click one to see only its activity.
   Blocks a condition passed over are marked **Skipped**, and a condition block shows what it decided.
 - The activity log updates live: prompts, Claude's messages, tool calls, commands and their output, notifications, approvals.
+  Claude's messages, prompts and approval messages are rendered as Markdown; prompts you can
+  edit have a **Preview** / **Edit** switch. See [MARKDOWN.md](MARKDOWN.md).
 - A pending approval appears on top. Approve to continue. Reject with a
   comment to send the run back to an earlier block with your comment as
   feedback for Claude, when the block is configured that way.
@@ -180,6 +182,8 @@ and the live stream.
 | `web/src/components/BlockPipeline.tsx` | The block editor |
 | `web/src/components/FieldInput.tsx` | Renders one setting from its field description |
 | `web/src/components/EventLog.tsx` | Renders run events by type |
+| `web/src/components/Markdown.tsx` | Renders Claude's text as Markdown, safely (see [MARKDOWN.md](MARKDOWN.md)) |
+| `web/src/components/PromptEditor.tsx` | Prompt with Preview / Edit tabs, at pauses and on the run page |
 | `web/src/run-log.ts`, `web/src/use-run-log.ts` | The run page's bounded, paged, batched view of a run's log |
 | `web/src/components/Terminal.tsx` | xterm.js terminal for the web shell |
 | `web/src/components/ApplyLatestCard.tsx` | Run page card that previews and applies workflow edits to the run |
