@@ -4,7 +4,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type VersionDiff, type VersionSummary, type Workflow } from '../api.ts';
-import { Empty, ErrorNote, TimeAgo } from './common.tsx';
+import { Empty, ErrorNote, LoadingOrError, TimeAgo } from './common.tsx';
 
 const SOURCE_LABEL: Record<VersionSummary['source'], string> = {
   created: 'Created',
@@ -72,7 +72,7 @@ export function VersionHistory({ workflow, dirty, onRestored, onExport }: Props)
     api.restoreVersion(workflow.id, version).then(onRestored, (reason: Error) => setError(reason.message));
   };
 
-  if (!versions) return <ErrorNote message={error} />;
+  if (!versions) return <LoadingOrError error={error} />;
   const current = versions.find((version) => version.version === selected);
 
   return (

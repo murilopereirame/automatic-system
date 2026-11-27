@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { api, type CleanupWhen, type Workflow, type WorkflowDraft } from '../api.ts';
 import { BlockPipeline } from '../components/BlockPipeline.tsx';
 import { CodeView } from '../components/CodeView.tsx';
-import { ErrorNote, PageHeader } from '../components/common.tsx';
+import { ErrorNote, LoadingOrError, PageHeader } from '../components/common.tsx';
 import { EnvironmentEditor } from '../components/EnvironmentEditor.tsx';
 import { NotificationsEditor } from '../components/NotificationsEditor.tsx';
 import { useRunNow } from '../components/RunNowDialog.tsx';
@@ -123,7 +123,7 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
     }
   };
 
-  if (!meta.data || (workflowId && !saved)) return <ErrorNote message={error ?? meta.error} />;
+  if (!meta.data || (workflowId && !saved)) return <LoadingOrError error={error ?? meta.error} />;
 
   return (
     <>

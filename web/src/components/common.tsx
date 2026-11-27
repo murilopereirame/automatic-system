@@ -28,6 +28,21 @@ export function ErrorNote({ message }: { message?: string }) {
   return message ? <p className="error">{message}</p> : null;
 }
 
+/** Shown while a page loads its data. Appears after a short delay, so fast loads do not flash it. */
+export function Loading() {
+  return (
+    <div className="loading" role="status">
+      <span className="spinner" aria-hidden="true" />
+      Loading…
+    </div>
+  );
+}
+
+/** The error when loading failed, the loading indicator while it is still going. */
+export function LoadingOrError({ error }: { error?: string }) {
+  return error ? <ErrorNote message={error} /> : <Loading />;
+}
+
 export function Empty({ children }: { children: ReactNode }) {
   return <p className="empty">{children}</p>;
 }
