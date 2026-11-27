@@ -61,6 +61,7 @@ export function RunValuesCard({ run, onChanged }: { run: Run; onChanged: () => v
         {open && !editing && <button onClick={() => startEdit()}>Add value</button>}
       </header>
       {values.length > 0 ? (
+        <div className="table-scroll">
         <table className="run-values-list">
           <tbody>
             {values.map(([valueName, current]) => (
@@ -81,6 +82,7 @@ export function RunValuesCard({ run, onChanged }: { run: Run; onChanged: () => v
             ))}
           </tbody>
         </table>
+        </div>
       ) : (
         !editing && (
           <p className="muted">

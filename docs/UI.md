@@ -170,6 +170,26 @@ The window logic is in `web/src/run-log.ts` (plain functions, tested in
 `web/test/run-log.test.ts`); `web/src/use-run-log.ts` connects it to the API
 and the live stream.
 
+## Layout, overflow and motion
+
+All styles live in `web/src/styles.css`, built on the tokens at its top
+(colours, shadows, `--ease`, `--fast`, `--medium`). A few rules keep every page
+usable with long content and on small screens:
+
+| Content | What happens |
+|---------|--------------|
+| Long names, ids, URLs, expressions | Wrap anywhere (`overflow-wrap: anywhere`) instead of widening the page |
+| Descriptions in lists | Two lines, the rest on the page they open |
+| Logs, command output, code, payloads, errors | Scroll inside their own box with a maximum height |
+| Tables and diffs | Scroll sideways inside their card |
+| Navigation and tabs | Scroll sideways on narrow screens |
+| Run page block list | Scrolls inside the sticky sidebar; above the log on phones |
+
+Pages fade in when they open, dialogs pop in, buttons, cards, tabs and inputs
+ease between states. Everything is switched off for people whose system asks
+for reduced motion. While a page loads its data it shows a spinner
+(`Loading` in `components/common.tsx`).
+
 ## Code structure
 
 | Path | Responsibility |

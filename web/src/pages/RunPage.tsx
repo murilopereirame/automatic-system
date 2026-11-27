@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, type Run, type RunDetail, type RunStatus, type StepConfig } from '../api.ts';
 import { ApplyLatestCard } from '../components/ApplyLatestCard.tsx';
 import { ApprovalCard } from '../components/ApprovalCard.tsx';
-import { ErrorNote, PageHeader, StatusBadge, TimeAgo } from '../components/common.tsx';
+import { ErrorNote, LoadingOrError, PageHeader, StatusBadge, TimeAgo } from '../components/common.tsx';
 import { EventLog } from '../components/EventLog.tsx';
 import { OutputFiles } from '../components/OutputFiles.tsx';
 import { RunPromptCard } from '../components/RunPromptCard.tsx';
@@ -85,7 +85,7 @@ export function RunPage({ runId }: { runId: string }) {
     if (follow && detail?.run.status === 'running') logEnd.current?.scrollIntoView({ block: 'end' });
   }, [log.events]);
 
-  if (!detail) return <ErrorNote message={error} />;
+  if (!detail) return <LoadingOrError error={error} />;
   const { run, approvals, outdated } = detail;
   const act = (action: Promise<unknown>) => action.then(reload, (reason: Error) => setError(reason.message));
   const pending = approvals.filter((approval) => approval.status === 'pending');
