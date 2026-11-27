@@ -1,17 +1,20 @@
-/** Create or edit a workflow: blocks, environment, notifications, the formula as code, and its version history. */
+/**
+ * Create or edit a workflow: the name in the header, then tabs for the blocks (a flow canvas),
+ * the workflow's settings, environment, notifications, the formula as code, and its version history.
+ */
 import { useEffect, useState } from 'react';
 import { api, type CleanupWhen, type Workflow, type WorkflowDraft } from '../api.ts';
-import { BlockPipeline } from '../components/BlockPipeline.tsx';
 import { CodeView } from '../components/CodeView.tsx';
 import { ErrorNote, LoadingOrError, PageHeader } from '../components/common.tsx';
 import { EnvironmentEditor } from '../components/EnvironmentEditor.tsx';
 import { NotificationsEditor } from '../components/NotificationsEditor.tsx';
 import { useRunNow } from '../components/RunNowDialog.tsx';
 import { VersionHistory } from '../components/VersionHistory.tsx';
+import { FlowEditor } from '../flow/FlowEditor.tsx';
 import { useLoad } from '../hooks.ts';
 import { navigate } from '../router.ts';
 
-const TABS = ['Blocks', 'Environment', 'Notifications', 'Code', 'History'] as const;
+const TABS = ['Blocks', 'Settings', 'Environment', 'Notifications', 'Code', 'History'] as const;
 type Tab = (typeof TABS)[number];
 
 const NEW_WORKFLOW: WorkflowDraft = {
@@ -130,15 +133,33 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
       <PageHeader
         title={
           <>
-            {workflowId ? draft.name || 'Workflow' : 'New workflow'}
-            {saved && <span className="badge" title="Current version. See the History tab.">v{saved.version}</span>}
+            {/* The sizer repeats the text invisibly so the input grows and shrinks with the name. */}
+            <span className="title-sizer" data-value={draft.name || 'New workflow name'}>
+              <input
+                className="title-input"
+                size={1}
+                value={draft.name}
+                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                placeholder={workflowId ? 'Name this workflow' : 'New workflow name'}
+                aria-label="Workflow name"
+                autoFocus={!workflowId}
+              />
+            </span>
+            {saved && (
+              <span className="badge" title="Current version. See the History tab.">
+                v{saved.version}
+              </span>
+            )}
+            {!draft.enabled && (
+              <span className="badge" title="Disabled workflows ignore their triggers. Change it in the Settings tab.">
+                disabled
+              </span>
+            )}
           </>
         }
       >
         {notice && !dirty && <span className="muted">{notice}</span>}
-        {saved && dirty && (
-          <input className="change-note" value={changeNote} onChange={(event) => setChangeNote(event.target.value)} placeholder="What changed? (optional)" aria-label="Describe this change" />
-        )}
+        {saved && dirty && <input className="change-note" value={changeNote} onChange={(event) => setChangeNote(event.target.value)} placeholder="What changed? (optional)" aria-label="Describe this change" />}
         {saved && <button onClick={() => exportFormula()}>Export formula</button>}
         {saved && (
           <button className="danger" onClick={remove}>
@@ -170,33 +191,6 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
         </section>
       )}
 
-      <section className="card workflow-basics">
-        <label className="field">
-          <span>Name</span>
-          <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="ClickUp task to pull request" />
-        </label>
-        <label className="field grow">
-          <span>Description</span>
-          <input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
-        </label>
-        <label className="field checkbox">
-          <input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />
-          <span>Enabled</span>
-          <small>Disabled workflows ignore their triggers.</small>
-        </label>
-        <label className="field">
-          <span>Files of finished runs</span>
-          <select value={draft.definition.cleanup?.when ?? 'never'} onChange={(event) => setDefinition({ cleanup: { when: event.target.value as CleanupWhen } })}>
-            {(Object.keys(CLEANUP_LABELS) as CleanupWhen[]).map((when) => (
-              <option key={when} value={when}>
-                {CLEANUP_LABELS[when]}
-              </option>
-            ))}
-          </select>
-          <small>The workspace with its clones, and Claude's conversation. A run whose files are gone cannot be retried.</small>
-        </label>
-      </section>
-
       <div className="tabs">
         {TABS.filter((name) => name !== 'History' || saved).map((name) => (
           <button key={name} className={tab === name ? 'tab active' : 'tab'} onClick={() => setTab(name)}>
@@ -205,25 +199,58 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
         ))}
       </div>
 
-      {tab === 'Blocks' && (
-        <BlockPipeline
-          meta={meta.data}
-          triggers={draft.definition.triggers}
-          inputs={draft.definition.inputs ?? []}
-          steps={draft.definition.steps}
-          secretNames={secrets.data ?? []}
-          hooks={saved && { workflowId: saved.id, secret: saved.hookSecret }}
-          onTriggersChange={(triggers) => setDefinition({ triggers })}
-          onInputsChange={(inputs) => setDefinition({ inputs })}
-          onStepsChange={(steps) => setDefinition({ steps })}
-        />
-      )}
-      {tab === 'Environment' && (
-        <EnvironmentEditor environment={draft.definition.environment} secretNames={secrets.data ?? []} requirements={requirements.data} egressEnforced={sandbox.data?.egressEnforced} onChange={(environment) => setDefinition({ environment })} />
-      )}
-      {tab === 'Notifications' && <NotificationsEditor notifications={draft.definition.notifications} onChange={(notifications) => setDefinition({ notifications })} />}
-      {tab === 'History' && saved && <VersionHistory workflow={saved} dirty={dirty} onRestored={restored} onExport={() => exportFormula(true)} />}
-      {tab === 'Code' && <CodeView draft={draft} onApply={(applied) => (setDraft(applied), setTab('Blocks'))} />}
+      {/* Keyed by the tab so each one fades in when it opens. */}
+      <div className="tab-panel" key={tab}>
+        {tab === 'Blocks' && (
+          <FlowEditor
+            meta={meta.data}
+            triggers={draft.definition.triggers}
+            inputs={draft.definition.inputs ?? []}
+            steps={draft.definition.steps}
+            secretNames={secrets.data ?? []}
+            hooks={saved && { workflowId: saved.id, secret: saved.hookSecret }}
+            onTriggersChange={(triggers) => setDefinition({ triggers })}
+            onInputsChange={(inputs) => setDefinition({ inputs })}
+            onStepsChange={(steps) => setDefinition({ steps })}
+          />
+        )}
+        {tab === 'Settings' && (
+          <section className="card workflow-settings">
+            <label className="field">
+              <span>Description</span>
+              <input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
+            </label>
+            <label className="field checkbox">
+              <input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />
+              <span>Enabled</span>
+              <small>Disabled workflows ignore their triggers.</small>
+            </label>
+            <label className="field">
+              <span>Files of finished runs</span>
+              <select value={draft.definition.cleanup?.when ?? 'never'} onChange={(event) => setDefinition({ cleanup: { when: event.target.value as CleanupWhen } })}>
+                {(Object.keys(CLEANUP_LABELS) as CleanupWhen[]).map((when) => (
+                  <option key={when} value={when}>
+                    {CLEANUP_LABELS[when]}
+                  </option>
+                ))}
+              </select>
+              <small>The workspace with its clones, and Claude's conversation. A run whose files are gone cannot be retried.</small>
+            </label>
+          </section>
+        )}
+        {tab === 'Environment' && (
+          <EnvironmentEditor
+            environment={draft.definition.environment}
+            secretNames={secrets.data ?? []}
+            requirements={requirements.data}
+            egressEnforced={sandbox.data?.egressEnforced}
+            onChange={(environment) => setDefinition({ environment })}
+          />
+        )}
+        {tab === 'Notifications' && <NotificationsEditor notifications={draft.definition.notifications} onChange={(notifications) => setDefinition({ notifications })} />}
+        {tab === 'History' && saved && <VersionHistory workflow={saved} dirty={dirty} onRestored={restored} onExport={() => exportFormula(true)} />}
+        {tab === 'Code' && <CodeView draft={draft} onApply={(applied) => (setDraft(applied), setTab('Blocks'))} />}
+      </div>
       {dialog}
     </>
   );

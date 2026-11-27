@@ -58,7 +58,7 @@ cleanup:
 | `succeeded` | Runs that succeeded. Failed and cancelled runs keep their files, so you can look at them and retry |
 | `finished` | Every run that ends: succeeded, failed or cancelled |
 
-In the editor this is **Files of finished runs** at the top of the workflow.
+In the editor this is **Files of finished runs** in the **Settings** tab of the workflow.
 
 ![The cleanup setting in the workflow editor](images/cleanup-setting.png)
 
