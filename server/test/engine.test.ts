@@ -69,6 +69,29 @@ test('Claude output is recorded and the session continues across steps', async (
   for (const expected of ['claude_prompt', 'claude_text', 'claude_tool', 'claude_tool_result']) assert.ok(types.includes(expected), expected);
 });
 
+test('each block records when it started and ended, and counts its attempts', async () => {
+  const marker = path.join(process.env.AUTOWORKER_DATA_DIR!, 'timing-marker');
+  const workflow = workflowWith([
+    { id: 'first', type: 'shell', with: { command: 'true' } },
+    { id: 'skipped', type: 'shell', if: 'false', with: { command: 'true' } },
+    { id: 'flaky', type: 'shell', with: { command: `test -e ${marker}` } },
+  ]);
+  const failed = await runToRest(workflow);
+  const timing = failed.context.timing!;
+  assert.equal(timing.first.attempts, 1);
+  assert.ok(timing.first.endedAt! >= timing.first.startedAt);
+  assert.equal(timing.skipped, undefined, 'a block that never started has no timing');
+  assert.ok(timing.flaky.endedAt, 'a failed block has ended');
+
+  await import('node:fs').then((fs) => fs.writeFileSync(marker, ''));
+  engine.retryRun(failed.id);
+  await engine.waitForIdle();
+  const retried = runs.getRun(failed.id)!.context.timing!;
+  assert.equal(retried.flaky.attempts, 2);
+  assert.ok(retried.flaky.startedAt >= timing.flaky.endedAt!);
+  assert.equal(retried.first.attempts, 1);
+});
+
 test('a Claude error fails the run with its message', async () => {
   const run = await runToRest(workflowWith([{ id: 'c', type: 'claude', with: { prompt: 'FAIL please' } }]));
   assert.equal(run.status, 'failed');

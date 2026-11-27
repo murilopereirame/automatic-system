@@ -82,9 +82,12 @@ same payload under **Triggered**. Inputs are described in
 
 ## Run page
 
-![Run page with an approval and the shell](images/run-with-shell.png)
+![Run page with an approval, the block timeline and the activity](images/run-view.png)
 
-- The list on the left shows every block and its state. Click one to see only its activity.
+The layout (summary with progress bar, block timeline, activity in one section
+per block, block timing) is explained in [RUN_VIEW.md](RUN_VIEW.md).
+
+- The timeline on the left shows every block with its icon, state and how long it took. Click one to see only its activity.
   Blocks a condition passed over are marked **Skipped**, and a condition block shows what it decided.
 - The activity log updates live: prompts, Claude's messages, tool calls, commands and their output, notifications, approvals.
   Claude's messages, prompts and approval messages are rendered as Markdown; prompts you can
@@ -189,7 +192,7 @@ usable with long content and on small screens:
 | Logs, command output, code, payloads, errors | Scroll inside their own box with a maximum height |
 | Tables and diffs | Scroll sideways inside their card |
 | Navigation and tabs | Scroll sideways on narrow screens |
-| Run page block list | Scrolls inside the sticky sidebar; above the log on phones |
+| Run page block timeline | Scrolls inside the sticky sidebar; above the log on phones |
 
 Pages fade in when they open, dialogs pop in, buttons, cards, tabs and inputs
 ease between states. Everything is switched off for people whose system asks
@@ -206,6 +209,7 @@ for reduced motion. While a page loads its data it shows a spinner
 | `web/src/App.tsx` | Sign-in gate, navigation, page routing |
 | `web/src/pages/` | One file per page |
 | `web/src/flow/` | The flow editor of the Blocks tab, see [FLOW_EDITOR.md](FLOW_EDITOR.md) |
+| `web/src/run-view/` | Parts of the run page: summary, block timeline, block details, sectioned log, see [RUN_VIEW.md](RUN_VIEW.md) |
 | `web/src/components/FieldInput.tsx` | Renders one setting from its field description |
 | `web/src/components/EventLog.tsx` | Renders run events by type |
 | `web/src/components/Markdown.tsx` | Renders Claude's text as Markdown, safely (see [MARKDOWN.md](MARKDOWN.md)) |

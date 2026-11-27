@@ -75,7 +75,7 @@ function describe(event: RunEvent): { label: string; tone?: string; body: ReactN
     case 'step_started':
       return { label: 'Block started', tone: 'heading', body: data.name };
     case 'step_finished':
-      return { label: 'Block finished', body: <Collapsible summary="Output">{() => <LongText text={json(data.output)} />}</Collapsible> };
+      return { label: 'Finished', body: <Collapsible summary="Output">{() => <LongText text={json(data.output)} />}</Collapsible> };
     case 'step_skipped':
       return { label: 'Block skipped', tone: 'heading', body: `${data.name}: ${data.reason}` };
     case 'condition':

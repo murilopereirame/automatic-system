@@ -180,6 +180,11 @@ main.wide {
   max-width: 1600px;
 }
 
+/* The run page: room for the block timeline next to a log that is still comfortable to read. */
+main.roomy {
+  max-width: 1360px;
+}
+
 /* Each page fades in when it opens. */
 .page {
   animation: page-in var(--medium) var(--ease);
@@ -1366,9 +1371,133 @@ pre.code {
 
 /* ---- Run page ---------------------------------------------------------- */
 
+/* Colours of a block's state, shared by the timeline, the progress bar and the activity sections. */
+.state-done,
+.state-succeeded {
+  --state-color: var(--good);
+}
+
+.state-running,
+.state-queued {
+  --state-color: var(--running);
+}
+
+.state-waiting {
+  --state-color: var(--attention);
+}
+
+.state-failed {
+  --state-color: var(--bad);
+}
+
+.state-cancelled,
+.state-skipped,
+.state-pending {
+  --state-color: var(--muted);
+}
+
+/* Summary: facts about the run and a progress bar with one segment per block. */
+.run-summary {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.run-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+  margin: 0;
+  min-width: 0;
+}
+
+.run-fact {
+  min-width: 0;
+}
+
+.run-fact dt {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.run-fact dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.run-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.run-progress-bar {
+  flex: 1;
+  display: flex;
+  gap: 3px;
+  min-width: 0;
+}
+
+.run-progress-segment {
+  flex: 1;
+  min-width: 4px;
+  height: 8px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--surface-2);
+  transition: background var(--medium) var(--ease), transform var(--fast) var(--ease);
+}
+
+.run-progress-segment:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--state-color) 40%, var(--surface-2));
+  transform: scaleY(1.4);
+}
+
+.run-progress-segment.state-done {
+  background: var(--good);
+}
+
+.run-progress-segment.state-skipped {
+  background: repeating-linear-gradient(135deg, var(--border) 0 3px, transparent 3px 6px);
+}
+
+.run-progress-segment.state-running,
+.run-progress-segment.state-queued,
+.run-progress-segment.state-waiting,
+.run-progress-segment.state-failed,
+.run-progress-segment.state-cancelled {
+  background: var(--state-color);
+}
+
+.run-progress-segment.state-running {
+  animation: pulse 1.4s var(--ease) infinite;
+}
+
+.run-progress-segment.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.run-progress-text {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Timeline of blocks (left) and their activity (right). */
 .run-layout {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 300px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
   margin-top: 12px;
@@ -1381,99 +1510,160 @@ pre.code {
   }
 }
 
-.steps {
+.timeline {
   padding: 8px;
-  display: grid;
-  gap: 2px;
   position: sticky;
   top: 64px;
-  /* A workflow with many blocks scrolls inside the sidebar instead of past the page. */
+  /* A workflow with many blocks scrolls inside the timeline instead of past the page. */
   max-height: calc(100vh - 80px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
 @media (max-width: 760px) {
-  .steps {
+  .timeline {
     position: static;
-    max-height: 40vh;
+    max-height: 45vh;
   }
 }
 
-.step {
+.timeline ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.timeline-step {
+  position: relative;
+}
+
+/* The rail between two icons. It is green up to the last block the run is past. */
+.timeline-step + .timeline-step::before {
+  content: '';
+  position: absolute;
+  left: 25px;
+  top: -10px;
+  height: 20px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--border);
+}
+
+.timeline-step.state-done + .timeline-step::before,
+.timeline-step.state-skipped + .timeline-step::before {
+  background: color-mix(in srgb, var(--good) 55%, var(--border));
+}
+
+.timeline-button {
   display: flex;
   align-items: center;
-  gap: 8px;
-  border: none;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
   text-align: left;
   white-space: normal;
-  width: 100%;
 }
 
-.step.selected {
-  background: var(--surface-2);
-}
-
-.step:hover:not(.selected) {
+.timeline-button:hover:not(:disabled) {
   border-color: transparent;
-  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
 }
 
-.step-name {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
+.timeline-button.selected {
+  background: var(--surface-2);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 
-.step-state {
-  text-align: right;
-  font-size: 12px;
-  color: var(--muted);
-  max-width: 45%;
-  overflow-wrap: anywhere;
-}
-
-.step-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 2px solid var(--border);
+.timeline-icon {
+  --node-color: var(--muted);
+  position: relative;
+  z-index: 1;
   flex: none;
-  transition: background var(--medium) var(--ease), border-color var(--medium) var(--ease);
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  color: var(--node-color);
+  background: color-mix(in srgb, var(--node-color) 14%, var(--surface));
+  transition: opacity var(--medium) var(--ease), box-shadow var(--medium) var(--ease);
 }
 
-.step-done .step-dot {
-  background: var(--good);
-  border-color: var(--good);
+.state-pending .timeline-icon {
+  opacity: 0.5;
+  filter: grayscale(0.6);
 }
 
-.step-skipped .step-dot {
-  border-style: dashed;
+.state-skipped .timeline-icon {
+  opacity: 0.55;
+  outline: 1px dashed var(--border);
 }
 
-.step-skipped .step-name {
+/* A running block gets a ring that turns around its icon. */
+.state-running .timeline-icon::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 12px;
+  border: 2px solid var(--running);
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  animation: spin 1.1s linear infinite;
+}
+
+.state-waiting .timeline-icon {
+  box-shadow: 0 0 0 2px var(--attention);
+}
+
+.state-failed .timeline-icon {
+  box-shadow: 0 0 0 2px var(--bad);
+}
+
+.timeline-badge {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--surface);
+  background: var(--state-color);
+}
+
+.timeline-text {
+  display: grid;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.timeline-name {
+  overflow-wrap: anywhere;
+}
+
+.state-skipped .timeline-name {
   color: var(--muted);
   text-decoration: line-through;
 }
 
-.step-running .step-dot {
-  border-color: var(--running);
-  border-top-color: transparent;
-  animation: spin 0.9s linear infinite;
+.timeline-meta {
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
-.step-waiting .step-dot {
-  background: var(--attention);
-  border-color: var(--attention);
-}
-
-.step-failed .step-dot {
-  background: var(--bad);
-  border-color: var(--bad);
-}
-
-.step-waiting .step-state {
-  color: var(--attention);
+.state-waiting .timeline-meta,
+.state-failed .timeline-meta,
+.state-running .timeline-meta {
+  color: var(--state-color);
   font-weight: 600;
 }
 
@@ -1483,13 +1673,224 @@ pre.code {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .step-running .step-dot {
-    animation: none;
-    background: var(--running);
+/* The selected block on top of the activity panel. */
+.step-details {
+  --node-color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--surface-2);
+}
+
+.step-details-text {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.step-details-text h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.step-details-text p {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+.step-details-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin: 0;
+}
+
+.step-details-facts dt {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.step-details-facts dd {
+  margin: 2px 0 0;
+}
+
+.step-details-state {
+  font-weight: 600;
+  color: var(--state-color);
+}
+
+.step-details-output {
+  flex-basis: 100%;
+  min-width: 0;
+}
+
+.step-details-output > button {
+  padding-left: 0;
+}
+
+.step-details-output pre {
+  margin-top: 6px;
+  background: var(--code-bg);
+  color: var(--code-text);
+  padding: 8px 10px;
+  border-radius: 6px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.log-header h2 {
+  margin: 0;
+}
+
+.log-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+  margin: 4px 0 8px;
+}
+
+
+/* One section of the log per block (run-view/ActivityLog.tsx). */
+.activity {
+  display: grid;
+  gap: 10px;
+}
+
+.activity > .event-log {
+  padding: 0 4px;
+}
+
+.activity-section {
+  --node-color: var(--muted);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--node-color);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.activity-section > .event-log {
+  padding: 0 12px 4px;
+}
+
+.activity-section > .event-log > .event:first-child {
+  border-top: none;
+}
+
+.activity-header {
+  position: sticky;
+  top: 52px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 4px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--surface);
+  min-width: 0;
+}
+
+.activity-section:has(> .event-log, > .activity-empty) .activity-header {
+  border-bottom: 1px solid var(--surface-2);
+}
+
+.activity-fold {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+.activity-chevron {
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg) translate(-1px, -1px);
+  transition: transform var(--fast) var(--ease);
+}
+
+.activity-fold[aria-expanded='false'] .activity-chevron {
+  transform: rotate(-45deg);
+}
+
+.activity-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--node-color);
+  background: color-mix(in srgb, var(--node-color) 14%, transparent);
+}
+
+.activity-title {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font-weight: 600;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+button.activity-title:hover:not(:disabled) {
+  background: none;
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.activity-state {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--state-color);
+}
+
+.activity-time {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+@media (max-width: 560px) {
+  .activity-time {
+    display: none;
   }
 }
 
+.activity-empty {
+  margin: 0;
+  padding: 8px 12px 10px 42px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .state-running .timeline-icon::after,
+  .run-progress-segment.state-running {
+    animation: none;
+  }
+}
+
+
+/* The icon takes the colour of its block from .step-details. */
+.step-details .flow-node-icon {
+  --node-color: inherit;
+}
 .log {
   min-width: 0;
 }

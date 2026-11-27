@@ -266,6 +266,17 @@ export interface RunContext {
   promptOnce?: Record<string, string>;
   /** The block a person let run after it paused before it. Removed when that block starts. */
   released?: string;
+  /** When each block last started and ended, by block id. Shown on the run page; not readable by templates. */
+  timing?: Record<string, StepTiming>;
+}
+
+/** Timing of a block in a run. A block that runs again (retry, condition going back) starts a new attempt. */
+export interface StepTiming {
+  startedAt: string;
+  /** Missing while the block runs or waits for a person. */
+  endedAt?: string;
+  /** How often the block has started in this run. */
+  attempts: number;
 }
 
 export interface Run {

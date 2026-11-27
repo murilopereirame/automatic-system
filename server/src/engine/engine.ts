@@ -150,6 +150,7 @@ async function executeStep(run: Run, workflow: Workflow, step: StepConfig, signa
   if (step.pauseBefore && run.context.released !== step.id) return pauseBefore(run, step, stepType.preview?.(runtime) ?? {});
   delete run.context.released;
 
+  markStarted(run, step);
   runs.addEvent(run.id, step.id, 'step_started', { type: step.type, name: step.name ?? stepType.title });
   const result = await stepType.execute(runtime);
   signal.throwIfAborted();
@@ -157,6 +158,7 @@ async function executeStep(run: Run, workflow: Workflow, step: StepConfig, signa
   if ('pause' in result) return waitForPerson(run, step, result.pause.message);
 
   run.context.steps[step.id] = { output: result.output ?? null };
+  markEnded(run, step.id);
   runs.addEvent(run.id, step.id, 'step_finished', { output: result.output ?? null });
   return result.goTo ? jump(run, step, result.goTo) : run.stepIndex + 1;
 }
@@ -194,9 +196,26 @@ function scopeFor(run: Run): Record<(typeof SCOPE_NAMES)[number], unknown> {
   };
 }
 
+/**
+ * Records that a block starts (again) and saves the run, so the run page shows how long it has been
+ * running. The timing is for people only: templates cannot read it (see docs/RUN_VIEW.md).
+ */
+function markStarted(run: Run, step: StepConfig): void {
+  const timing = (run.context.timing ??= {});
+  timing[step.id] = { startedAt: new Date().toISOString(), attempts: (timing[step.id]?.attempts ?? 0) + 1 };
+  runs.saveRun(run);
+}
+
+/** Records that a block that started has ended: finished, answered, skipped while running, failed or cancelled. */
+function markEnded(run: Run, stepId: string | undefined): void {
+  const entry = stepId ? run.context.timing?.[stepId] : undefined;
+  if (entry && !entry.endedAt) entry.endedAt = new Date().toISOString();
+}
+
 /** Records that the run passed over a step. Its output reads as empty from then on. */
 function skip(run: Run, step: StepConfig, reason: string): void {
   run.context.steps[step.id] = { output: null, skipped: true };
+  markEnded(run, step.id);
   runs.addEvent(run.id, step.id, 'step_skipped', { name: step.name ?? step.id, reason });
 }
 
@@ -259,6 +278,7 @@ function workflowForRun(run: Run): Workflow {
 }
 
 function finish(run: Run, status: 'succeeded' | 'failed' | 'cancelled', error?: string): void {
+  markEnded(run, run.definition.steps[run.stepIndex]?.id);
   run.status = status;
   run.error = error;
   runs.saveRun(run);
@@ -339,6 +359,7 @@ export function resolveApproval(approvalId: string, decision: 'approved' | 'reje
   if (approval.kind === 'before_step') return releaseStep(run, step, approval, decision, comment, answer);
   runs.resolveApproval(approvalId, decision, comment);
   run.context.steps[step.id] = { output: { decision, comment } };
+  markEnded(run, step.id);
   runs.addEvent(run.id, step.id, 'approval_resolved', { approvalId, decision, comment });
 
   if (decision === 'approved') {

@@ -1,45 +1,25 @@
-/** One run: its blocks with their state, the live event log, pending approvals, values for upcoming blocks and the web shell. */
+/**
+ * One run: pending approvals, a summary with a progress bar, the blocks as a timeline next to their
+ * activity, values for upcoming blocks, the web shell and the output files. Layout in docs/RUN_VIEW.md.
+ */
 import { useEffect, useRef, useState } from 'react';
-import { api, type Run, type RunDetail, type RunStatus, type StepConfig } from '../api.ts';
+import { api, type RunDetail, type StepConfig } from '../api.ts';
 import { ApplyLatestCard } from '../components/ApplyLatestCard.tsx';
 import { ApprovalCard } from '../components/ApprovalCard.tsx';
-import { ErrorNote, LoadingOrError, PageHeader, StatusBadge, TimeAgo } from '../components/common.tsx';
-import { EventLog } from '../components/EventLog.tsx';
+import { ErrorNote, LoadingOrError, PageHeader, StatusBadge } from '../components/common.tsx';
 import { OutputFiles } from '../components/OutputFiles.tsx';
 import { RunPromptCard } from '../components/RunPromptCard.tsx';
 import { RunValuesCard } from '../components/RunValuesCard.tsx';
 import { Terminal } from '../components/Terminal.tsx';
 import { useLive } from '../live.ts';
 import { useRunLog } from '../use-run-log.ts';
+import { ActivityLog } from '../run-view/ActivityLog.tsx';
+import { RunSummary } from '../run-view/RunSummary.tsx';
+import { stepState } from '../run-view/run-steps.ts';
+import { StepDetails } from '../run-view/StepDetails.tsx';
+import { StepTimeline } from '../run-view/StepTimeline.tsx';
+import { useNow } from '../run-view/use-now.ts';
 import { triggerSummary } from './RunsPage.tsx';
-
-type StepState = 'done' | 'skipped' | 'pending' | RunStatus;
-
-/** Blocks before the current one are done or were skipped by a condition, the current one mirrors the run, later ones are pending. */
-function stepState(run: Run, index: number): StepState {
-  if (run.status !== 'succeeded' && index >= run.stepIndex) return index === run.stepIndex ? run.status : 'pending';
-  return run.context.steps[run.definition.steps[index].id]?.skipped ? 'skipped' : 'done';
-}
-
-/** What a finished condition block decided, e.g. "False → Report". Shown instead of "Done". */
-function conditionOutcome(run: Run, step: StepConfig): string | undefined {
-  const output = run.context.steps[step.id]?.output as { result?: boolean; goTo?: string | null } | null | undefined;
-  if (step.type !== 'condition' || typeof output?.result !== 'boolean') return undefined;
-  const target = output.goTo === '$end' ? 'end of run' : run.definition.steps.find((candidate) => candidate.id === output.goTo)?.name || output.goTo;
-  return `${output.result ? 'True' : 'False'}${target ? ` → ${target}` : ''}`;
-}
-
-const STATE_LABEL: Record<StepState, string> = {
-  done: 'Done',
-  skipped: 'Skipped',
-  pending: 'Pending',
-  queued: 'Queued',
-  running: 'Running',
-  waiting: 'Needs you',
-  succeeded: 'Done',
-  failed: 'Failed',
-  cancelled: 'Stopped',
-};
 
 /**
  * Wraps a reload so that bursts of calls cause at most one request in flight and one after it.
@@ -72,6 +52,9 @@ export function RunPage({ runId }: { runId: string }) {
   const [shellOpen, setShellOpen] = useState(false);
   const [follow, setFollow] = useState(true);
   const logEnd = useRef<HTMLDivElement>(null);
+  const open = detail ? ['running', 'waiting', 'queued'].includes(detail.run.status) : false;
+  // Durations of running blocks count up while the run is open.
+  const now = useNow(open);
 
   const reload = useCoalescedReload(() => api.run(runId).then(setDetail, (reason: Error) => setError(reason.message)));
   useEffect(() => void reload(), [runId]);
@@ -89,7 +72,7 @@ export function RunPage({ runId }: { runId: string }) {
   const { run, approvals, outdated } = detail;
   const act = (action: Promise<unknown>) => action.then(reload, (reason: Error) => setError(reason.message));
   const pending = approvals.filter((approval) => approval.status === 'pending');
-  const active = run.status === 'running' || run.status === 'queued' || run.status === 'waiting';
+  const active = open;
   const currentStep: StepConfig | undefined = run.definition.steps[run.stepIndex];
   const cleaned = run.cleanedAt !== undefined;
   const canSkip = currentStep && !cleaned && ['running', 'waiting', 'failed', 'cancelled'].includes(run.status);
@@ -104,8 +87,15 @@ export function RunPage({ runId }: { runId: string }) {
     if (window.confirm(`Skip "${name}" and continue with the next block?${stops} Later blocks will see it as skipped, without an output.`)) act(api.skipStep(run.id));
   };
   const stepOf = (stepId: string): StepConfig | undefined => run.definition.steps.find((step) => step.id === stepId);
-  const pausedBefore = (step: StepConfig) => pending.some((approval) => approval.kind === 'before_step' && approval.stepId === step.id);
-  const selected = selectedStep ? stepOf(selectedStep) : undefined;
+  const selectedIndex = selectedStep ? run.definition.steps.findIndex((step) => step.id === selectedStep) : -1;
+  const selected = run.definition.steps[selectedIndex];
+  const triggerText = triggerSummary(run.context);
+  const followToggle = (
+    <label className="field checkbox inline" title="Keep the newest activity in view while the run is going">
+      <input type="checkbox" checked={follow} onChange={(event) => setFollow(event.target.checked)} />
+      <span>Follow</span>
+    </label>
+  );
 
   return (
     <>
@@ -138,23 +128,6 @@ export function RunPage({ runId }: { runId: string }) {
           </button>
         )}
       </PageHeader>
-      <p className="muted">
-        {triggerSummary(run.context)} · started <TimeAgo time={run.createdAt} />
-        {run.workflowVersion !== undefined && (
-          <>
-            {' · '}
-            <a href={`#/workflows/${run.workflowId}`} title="The workflow version this run executes. Compare versions in the History tab of the workflow.">
-              workflow v{run.workflowVersion}
-            </a>
-          </>
-        )}
-        {run.context.repo && ` · ${run.context.repo.owner}/${run.context.repo.name} on ${run.context.repo.branch}`}
-        {run.cleanedAt && (
-          <>
-            {' · '}files cleaned up <TimeAgo time={run.cleanedAt} />
-          </>
-        )}
-      </p>
       <ErrorNote message={error ?? (run.status === 'failed' ? run.error : undefined)} />
       {outdated && !cleaned && <ApplyLatestCard run={run} onApplied={reload} />}
 
@@ -172,6 +145,8 @@ export function RunPage({ runId }: { runId: string }) {
         );
       })}
 
+      <RunSummary run={run} triggerText={triggerText} selected={selectedStep} onSelect={setSelectedStep} now={now} />
+
       <RunValuesCard run={run} onChanged={reload} />
 
       {shellOpen && !cleaned && (
@@ -184,30 +159,25 @@ export function RunPage({ runId }: { runId: string }) {
       )}
 
       <div className="run-layout">
-        <aside className="card steps">
-          <button className={selectedStep ? 'step' : 'step selected'} onClick={() => setSelectedStep(undefined)}>
-            <span className="step-name">All activity</span>
-          </button>
-          {run.definition.steps.map((step, index) => {
-            const state = stepState(run, index);
-            return (
-              <button key={step.id} className={`step step-${state}${selectedStep === step.id ? ' selected' : ''}`} onClick={() => setSelectedStep(step.id)}>
-                <span className="step-dot" />
-                <span className="step-name">{step.name || step.id}</span>
-                <span className="step-state">{(state === 'done' && conditionOutcome(run, step)) || (state === 'waiting' && pausedBefore(step) && 'Paused before start') || STATE_LABEL[state]}</span>
-              </button>
-            );
-          })}
-        </aside>
+        <StepTimeline run={run} pending={pending} selected={selectedStep} onSelect={setSelectedStep} now={now} triggerText={triggerText} />
 
         <section className="card log">
-          <header>
-            <h2>{selectedStep ? stepOf(selectedStep)?.name || selectedStep : 'Activity'}</h2>
-            <label className="field checkbox inline">
-              <input type="checkbox" checked={follow} onChange={(event) => setFollow(event.target.checked)} />
-              <span>Follow</span>
-            </label>
-          </header>
+          {selected ? (
+            <>
+              <StepDetails run={run} step={selected} state={stepState(run, selectedIndex)} now={now} />
+              <div className="log-toolbar">
+                <button className="ghost" onClick={() => setSelectedStep(undefined)}>
+                  ← All activity
+                </button>
+                {followToggle}
+              </div>
+            </>
+          ) : (
+            <header className="log-header">
+              <h2>Activity</h2>
+              {followToggle}
+            </header>
+          )}
           {selected?.type === 'claude' && run.status !== 'succeeded' && <RunPromptCard run={run} step={selected} onSaved={reload} />}
           <ErrorNote message={logError} />
           {log.hasOlder && (
@@ -215,7 +185,11 @@ export function RunPage({ runId }: { runId: string }) {
               <button onClick={loadOlder}>Load older activity</button>
             </div>
           )}
-          {log.events.length === 0 ? <p className="empty">{loading ? 'Loading…' : 'Nothing has happened here yet.'}</p> : <EventLog events={log.events} />}
+          {log.events.length === 0 ? (
+            <p className="empty">{loading ? 'Loading…' : 'Nothing has happened here yet.'}</p>
+          ) : (
+            <ActivityLog run={run} events={log.events} now={now} single={selected !== undefined} onSelect={setSelectedStep} />
+          )}
           <div ref={logEnd} />
         </section>
       </div>

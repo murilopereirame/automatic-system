@@ -42,6 +42,7 @@ flowchart LR
 | [docs/SPEC.md](docs/SPEC.md) | Requirements, concepts and milestones |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components, run life cycle, data model, with diagrams |
 | [docs/UI.md](docs/UI.md) | The web UI: pages, editor, run view, with screenshots |
+| [docs/RUN_VIEW.md](docs/RUN_VIEW.md) | Layout of the run page: summary, block timeline, activity per block, block timing |
 | [docs/FORMULA.md](docs/FORMULA.md) | Formula reference: triggers, environment, notifications, blocks, templates |
 | [docs/VERSIONING.md](docs/VERSIONING.md) | Workflow versions: history, diff, rollback, history in formulas |
 | [docs/RUN-VALUES.md](docs/RUN-VALUES.md) | Adding values to a run while it is open, for the blocks after it |
