@@ -554,16 +554,49 @@ input[type='checkbox'] {
   border-bottom-color: var(--accent);
 }
 
-.workflow-basics {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  flex-wrap: wrap;
+.workflow-settings {
+  max-width: 720px;
 }
 
-.workflow-basics .field {
-  margin: 0;
-  min-width: min(220px, 100%);
+.tab-panel {
+  animation: page-in var(--medium) var(--ease);
+}
+
+/* The workflow name, edited in place in the page title. */
+.title-sizer {
+  display: inline-grid;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: -9px;
+}
+
+.title-sizer::after,
+.title-input {
+  grid-area: 1 / 1;
+  font: inherit;
+  font-weight: 700;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+}
+
+.title-sizer::after {
+  content: attr(data-value) ' ';
+  visibility: hidden;
+  white-space: pre;
+  overflow: hidden;
+}
+
+.title-input {
+  width: 100%;
+  background: transparent;
+}
+
+.title-input:hover {
+  border-color: var(--border);
+}
+
+.title-input:focus {
+  background: var(--surface);
 }
 
 /* ---- Status ------------------------------------------------------------ */
@@ -622,173 +655,532 @@ input[type='checkbox'] {
   font-weight: 500;
 }
 
-/* ---- Block pipeline ---------------------------------------------------- */
+/* ---- Flow editor (web/src/flow, docs/FLOW_EDITOR.md) ---------------- */
 
-.pipeline {
-  max-width: 720px;
-  margin: 0 auto;
+/* The canvas fills the rest of the window below the editor's header and tabs. */
+.flow-canvas {
+  --dot: color-mix(in srgb, var(--muted) 35%, transparent);
+  position: relative;
+  height: max(460px, calc(100vh - 250px));
+  /* clip, not hidden: focusing a node or the panel's search box must not scroll the canvas itself. */
+  overflow: clip;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--bg);
+  background-image: radial-gradient(circle, var(--dot) 1px, transparent 1.2px);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
-.block {
+.flow-canvas.panning {
+  cursor: grabbing;
+}
+
+.flow-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.flow-canvas.easing .flow-layer {
+  transition: transform 250ms var(--ease);
+}
+
+.flow-edges {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.flow-edge {
+  fill: none;
+  stroke: color-mix(in srgb, var(--muted) 60%, var(--border));
+  stroke-width: 2;
+  transition: stroke var(--fast) var(--ease), opacity var(--medium) var(--ease);
+}
+
+.flow-edge-entry {
+  stroke-dasharray: 2 5;
+  stroke-linecap: round;
+}
+
+.flow-edge-true {
+  stroke: var(--good);
+}
+
+.flow-edge-false {
+  stroke: var(--attention);
+}
+
+.flow-edge-rejected {
+  stroke: var(--bad);
+  stroke-dasharray: 6 4;
+}
+
+.flow-edge-order {
+  stroke-dasharray: 2 6;
+  opacity: 0.5;
+}
+
+.flow-edge.active {
+  stroke: var(--accent);
+}
+
+.flow-arrow {
+  fill: color-mix(in srgb, var(--muted) 60%, var(--border));
+}
+
+.flow-arrow-true {
+  fill: var(--good);
+}
+
+.flow-arrow-false {
+  fill: var(--attention);
+}
+
+.flow-arrow-rejected {
+  fill: var(--bad);
+}
+
+.flow-arrow-active {
+  fill: var(--accent);
+}
+
+.flow-canvas.dragging .flow-edge,
+.flow-canvas.dragging .flow-edge-label {
+  opacity: 0.15;
+}
+
+.flow-edge-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-left: 4px solid var(--muted);
-  border-radius: var(--radius);
+  color: var(--muted);
+  pointer-events: none;
 }
 
-.block.open {
-  border-color: var(--accent);
-  border-left-color: var(--accent);
+.flow-edge-label-true {
+  color: var(--good);
+  border-color: color-mix(in srgb, var(--good) 40%, var(--border));
 }
 
-.block.dragging {
-  opacity: 0.4;
+.flow-edge-label-false {
+  color: var(--attention);
+  border-color: color-mix(in srgb, var(--attention) 40%, var(--border));
 }
 
-.block > header {
+.flow-edge-label-rejected {
+  color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 40%, var(--border));
+}
+
+/* ---- Nodes ---- */
+
+.flow-node {
+  position: absolute;
+  cursor: pointer;
+  border-radius: 10px;
+  outline: none;
+  transition: transform var(--medium) var(--ease);
+  animation: node-in var(--medium) var(--ease);
+}
+
+@keyframes node-in {
+  from {
+    opacity: 0;
+    scale: 0.94;
+  }
+}
+
+.flow-node.lifted {
+  transition: none;
+  z-index: 3;
+  cursor: grabbing;
+}
+
+.flow-card {
+  --node-color: var(--muted);
+  position: relative;
+  height: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 10px 12px;
-  cursor: pointer;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: border-color var(--fast) var(--ease), box-shadow var(--medium) var(--ease);
 }
 
-.trigger-block {
-  border-left-color: var(--accent);
+/* A strip of the node's colour on its left. */
+.flow-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--node-color);
 }
 
-.trigger-block > .muted {
-  padding: 0 12px;
-  overflow-wrap: anywhere;
+.flow-node:hover .flow-card {
+  border-color: color-mix(in srgb, var(--node-color) 55%, var(--border));
+  box-shadow: var(--shadow-md);
 }
 
-.block-kind {
-  font-weight: 700;
-  text-transform: uppercase;
+.flow-node.selected .flow-card,
+.flow-node:focus-visible .flow-card {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent), var(--shadow-md);
+}
+
+.flow-node.lifted .flow-card {
+  box-shadow: var(--shadow-lg);
+  rotate: -1.5deg;
+}
+
+.flow-node-icon {
+  --node-color: var(--muted);
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  color: var(--node-color);
+  background: color-mix(in srgb, var(--node-color) 14%, transparent);
+}
+
+.flow-card-text {
+  display: grid;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.flow-card-text > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-card-number {
+  display: inline-block;
+  min-width: 18px;
+  margin-right: 6px;
+  padding: 0 4px;
+  border-radius: 4px;
   font-size: 11px;
-  letter-spacing: 0.06em;
+  text-align: center;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.flow-card-subtitle,
+.flow-card-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.flow-card-note {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--running);
+}
+
+/* Only the first note fits on the card; all of them are in its tooltip and side panel. */
+.flow-card-note + .flow-card-note {
+  display: none;
+}
+
+.flow-card-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--muted);
+  background: var(--surface-2);
+  opacity: 0;
+}
+
+.flow-node:hover .flow-card-remove,
+.flow-card-remove:focus-visible {
+  opacity: 1;
+}
+
+.flow-card-remove:hover:not(:disabled) {
+  color: var(--bad);
+}
+
+/* Touch screens have no hover: keep the remove button visible on the selected node. */
+@media (hover: none) {
+  .flow-node.selected .flow-card-remove {
+    opacity: 1;
+  }
+}
+
+.flow-node-end {
+  display: grid;
+  place-items: center;
+}
+
+.flow-end {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  transition: border-color var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+
+.flow-node-end:hover .flow-end,
+.flow-node-end.selected .flow-end {
+  border-color: var(--accent);
   color: var(--accent);
 }
 
-.block-claude {
-  border-left-color: #c2703d;
+.flow-placeholder {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  font-weight: 500;
+  transition: border-color var(--fast) var(--ease), color var(--fast) var(--ease);
 }
 
-.block-approval {
-  border-left-color: var(--attention);
+.flow-node-placeholder:hover .flow-placeholder,
+.flow-node-placeholder.selected .flow-placeholder {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
-.block-github_pr,
-.block-git_clone {
-  border-left-color: var(--good);
+.flow-drop-slot {
+  position: absolute;
+  width: 240px;
+  height: 76px;
+  border: 2px dashed var(--accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  transition: left var(--medium) var(--ease);
 }
 
-.block-condition {
-  border-left-color: var(--running);
+/* The "+" between two columns. */
+.flow-insert {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  padding: 0;
+  border-radius: 50%;
+  line-height: 1;
+  font-size: 16px;
+  color: var(--muted);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  z-index: 2;
 }
 
-.block-condition-note {
+.flow-insert:hover:not(:disabled) {
+  color: var(--accent-text);
+  background: var(--accent);
+  border-color: var(--accent);
+  transform: scale(1.15);
+}
+
+/* ---- Overlays: toolbar, zoom, hint, side panel ---- */
+
+.flow-toolbar,
+.flow-zoom {
+  position: absolute;
+  display: flex;
+  gap: 6px;
+  z-index: 4;
+}
+
+.flow-toolbar {
+  top: 12px;
+  left: 12px;
+}
+
+.flow-toolbar button {
+  box-shadow: var(--shadow-sm);
+}
+
+.flow-zoom {
+  bottom: 12px;
+  left: 12px;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.flow-zoom button {
+  padding: 4px 8px;
+}
+
+.flow-zoom-value {
+  min-width: 52px;
+  font-variant-numeric: tabular-nums;
+}
+
+.icon-button {
+  min-width: 30px;
+  padding: 4px 8px;
+}
+
+.flow-hint {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+@media (max-width: 700px) {
+  .flow-hint {
+    display: none;
+  }
+}
+
+.flow-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  cursor: auto;
+  user-select: text;
+  touch-action: auto;
+  transform: translateX(calc(100% + 24px));
+  visibility: hidden;
+  transition: transform 240ms var(--ease), visibility 0s linear 240ms;
+}
+
+.flow-panel.open {
+  transform: none;
+  visibility: visible;
+  transition: transform 240ms var(--ease), visibility 0s;
+}
+
+.flow-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.flow-panel-title {
+  flex: 1;
+  display: grid;
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.block-number {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--surface-2);
-  display: grid;
-  place-items: center;
+.flow-panel-title .muted {
   font-size: 12px;
-  font-weight: 600;
-  flex: none;
 }
 
-.block-title {
+.flow-panel-body {
   flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+}
+
+.flow-panel-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Side by side fields do not fit in the panel. */
+.flow-panel .field-pair {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.field-hint {
+  margin: -6px 0 12px;
+  font-size: 12px;
+}
+
+.copy-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.copy-field code {
+  flex: 1;
+  padding: 6px 8px;
+}
+
+.node-picker {
+  display: grid;
+  gap: 2px;
+  margin-top: 10px;
+}
+
+.node-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border: 1px solid transparent;
+  text-align: left;
+  white-space: normal;
+  background: none;
+}
+
+.node-picker-item.active {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+.node-picker-text {
   display: grid;
   min-width: 0;
 }
 
-.block-title .muted {
+.node-picker-text .muted {
   font-size: 12px;
-}
-
-.block-actions {
-  display: flex;
-}
-
-.block-fields {
-  padding: 4px 12px 4px;
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
-}
-
-.connector {
-  position: relative;
-  height: 36px;
-  display: grid;
-  place-items: center;
-}
-
-.connector::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  border-left: 2px solid var(--border);
-}
-
-.add-block {
-  position: relative;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border-radius: 50%;
-  line-height: 1;
-  color: var(--muted);
-}
-
-.add-trigger {
-  width: auto;
-  padding: 0 12px;
-  border-radius: 12px;
-  background: var(--surface);
-  font-size: 12px;
-}
-
-.trigger-block + .trigger-block {
-  margin-top: 8px;
-}
-
-.palette {
-  position: absolute;
-  top: 32px;
-  z-index: 5;
-  width: min(420px, 90vw);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
-  padding: 6px;
-  display: grid;
-  gap: 2px;
-}
-
-.palette button {
-  display: grid;
-  text-align: left;
-  border: none;
-  white-space: normal;
-}
-
-.palette button:hover {
-  background: var(--surface-2);
-}
-
-.palette .muted {
   font-weight: 400;
-  font-size: 12px;
 }
 
 .code-editor {

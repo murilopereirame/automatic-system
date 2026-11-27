@@ -28,18 +28,24 @@ flowchart LR
 
 ## Workflow editor
 
-![Block editor](images/editor.png)
+![Flow editor](images/editor.png)
 
-- **Blocks**: the **Run now** block and the triggers on top, then the blocks in
-  the order they run. Open the **Run now** block to add inputs: values a manual
-  run asks for, see [Run now with inputs](#run-now-with-inputs). Any
-  trigger starts a run. **+ Add trigger** adds one, also a second of the same
-  type; click a trigger to edit its settings. Triggers that are called from
-  outside show their own URL. Without triggers, runs start only from **Run now**.
-  Use the `+` between blocks to insert one, drag a block or use the arrows to
-  reorder, click a block to edit its settings. Every block has a **Run only
-  if** setting, and the **Condition** block branches to another block; both
-  show their expression on the block. See [EXPRESSIONS.md](EXPRESSIONS.md).
+The workflow's name is edited in place in the page title.
+
+- **Blocks**: the workflow as a flow on a canvas, read left to right. **Run
+  now** and the triggers start it, then come the blocks in the order they
+  run, then the end. Drag the background to pan, Ctrl/⌘ + scroll or pinch to
+  zoom, **Fit** to see all of it. Click a node to edit it in the side panel,
+  use a `+` between two nodes (or **+ Block**, **+ Trigger**) to add one, drag
+  a block sideways to reorder it. Condition outcomes and "go back on
+  rejection" are drawn as labelled edges. Everything about the canvas is in
+  [FLOW_EDITOR.md](FLOW_EDITOR.md). Open **Run now** to add inputs: values a
+  manual run asks for, see [Run now with inputs](#run-now-with-inputs).
+  Triggers that are called from outside show their own URL in their panel.
+  Without triggers, runs start only from **Run now**. Every block has a
+  **Run only if** setting, shown on the node. See [EXPRESSIONS.md](EXPRESSIONS.md).
+- **Settings**: description, **Enabled** (disabled workflows ignore their
+  triggers, the title then says *disabled*), and **Files of finished runs**.
 - **Environment**: runtimes, environment variables, which secrets Claude may
   see, Claude memory files, MCP servers and expected volume mounts.
 - **Notifications**: the webhook calls, with templated URL, headers and body.
@@ -117,7 +123,7 @@ same payload under **Triggered**. Inputs are described in
 - **Clean up files** deletes the run's workspace and Claude's conversation
   files once the run has ended. The run and its log stay; it cannot be
   retried afterwards. The Runs page has **Clean up ended runs** for all of
-  them at once, and the workflow editor has **Files of finished runs** to do
+  them at once, and the workflow editor's **Settings** tab has **Files of finished runs** to do
   it automatically. See [CLEANUP.md](CLEANUP.md).
 - **Open shell** starts a terminal in the run's workspace, as the same user
   and with the same environment as Claude. Use it to inspect the work or run
@@ -199,7 +205,7 @@ for reduced motion. While a page loads its data it shows a spinner
 | `web/src/router.ts` | Hash router |
 | `web/src/App.tsx` | Sign-in gate, navigation, page routing |
 | `web/src/pages/` | One file per page |
-| `web/src/components/BlockPipeline.tsx` | The block editor |
+| `web/src/flow/` | The flow editor of the Blocks tab, see [FLOW_EDITOR.md](FLOW_EDITOR.md) |
 | `web/src/components/FieldInput.tsx` | Renders one setting from its field description |
 | `web/src/components/EventLog.tsx` | Renders run events by type |
 | `web/src/components/Markdown.tsx` | Renders Claude's text as Markdown, safely (see [MARKDOWN.md](MARKDOWN.md)) |
