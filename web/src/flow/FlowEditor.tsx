@@ -3,11 +3,12 @@
  * for the selected node. "Run now" and the triggers start the flow on the left, then the blocks in
  * the order they run, then the end. See docs/FLOW_EDITOR.md.
  *
- * This file owns the editing (add, change, move, remove); FlowCanvas draws and handles the pointer,
+ * This file owns the editing (add, change, move, remove, and where nodes were dragged to);
+ * FlowCanvas draws and handles the pointer,
  * graph.ts decides where everything goes, NodePanel and NodePicker are the side panels.
  */
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import type { BlockType, Meta, RunInput, StepConfig, TriggerConfig } from '../api.ts';
+import type { BlockType, FlowLayout, Meta, NodePosition, RunInput, StepConfig, TriggerConfig, WorkflowDefinition } from '../api.ts';
 import { describeInputs } from '../components/RunInputsEditor.tsx';
 import { FlowCanvas } from './FlowCanvas.tsx';
 import { buildGraph, type GraphNode } from './graph.ts';
@@ -24,9 +25,19 @@ interface Props {
   secretNames: string[];
   /** What webhook URLs are built from. Missing until the workflow has been saved once. */
   hooks?: { workflowId: string; secret: string };
-  onTriggersChange: (triggers: TriggerConfig[]) => void;
-  onInputsChange: (inputs: RunInput[]) => void;
-  onStepsChange: (steps: StepConfig[]) => void;
+  /** Where nodes were dragged to. Missing when every node is laid out automatically. */
+  layout?: FlowLayout;
+  /** One call per edit, with every part of the definition it changed (e.g. `steps` and `layout`). */
+  onChange: (changes: Partial<WorkflowDefinition>) => void;
+}
+
+/** The layout holding `positions`, or none when no node has one left. */
+const layoutOf = (positions: Record<string, NodePosition>): FlowLayout | undefined => (Object.keys(positions).length ? { positions } : undefined);
+
+/** `positions` without `key`, and with `position` under `renamed` instead when given. */
+function movePosition(positions: Record<string, NodePosition>, key: string, renamed?: string): Record<string, NodePosition> {
+  const { [key]: position, ...rest } = positions;
+  return renamed && position ? { ...rest, [renamed]: position } : rest;
 }
 
 /** What the "add" panel is adding: a block at a position, or a trigger. */
@@ -62,10 +73,16 @@ function renameTargets(steps: StepConfig[], from: string, to: string): StepConfi
   });
 }
 
-export function FlowEditor({ meta, triggers, inputs, steps, secretNames, hooks, onTriggersChange, onInputsChange, onStepsChange }: Props) {
+export function FlowEditor({ meta, triggers, inputs, steps, secretNames, hooks, layout, onChange }: Props) {
   const [selectedKey, setSelectedKey] = useState<string>();
   const [adding, setAdding] = useState<Adding>();
-  const graph = useMemo(() => buildGraph(triggers, steps), [triggers, steps]);
+  /** The node being dragged and where it is right now. Saved to the layout only when it is let go. */
+  const [dragging, setDragging] = useState<{ key: string; position: NodePosition }>();
+  const positions = layout?.positions ?? {};
+  const graph = useMemo(() => buildGraph(triggers, steps, dragging ? { ...positions, [dragging.key]: dragging.position } : positions), [triggers, steps, layout, dragging]);
+  const onTriggersChange = (next: TriggerConfig[]) => onChange({ triggers: next });
+  const onInputsChange = (next: RunInput[]) => onChange({ inputs: next });
+  const onStepsChange = (next: StepConfig[]) => onChange({ steps: next });
 
   const close = () => (setSelectedKey(undefined), setAdding(undefined));
   const stepType = (type: string) => meta.stepTypes.find((candidate) => candidate.type === type);
@@ -86,11 +103,12 @@ export function FlowEditor({ meta, triggers, inputs, steps, secretNames, hooks, 
   const updateStep = (index: number, changes: Partial<StepConfig>) => onStepsChange(steps.map((step, at) => (at === index ? { ...step, ...changes } : step)));
   const renameStep = (index: number, id: string) => {
     const renamed = steps.map((step, at) => (at === index ? { ...step, id } : step));
-    onStepsChange(renameTargets(renamed, steps[index].id, id));
+    // The block keeps its place on the canvas under its new id.
+    onChange({ steps: renameTargets(renamed, steps[index].id, id), layout: layoutOf(movePosition(positions, `step:${steps[index].id}`, `step:${id}`)) });
     setSelectedKey(`step:${id}`);
   };
   const removeStep = (index: number) => {
-    onStepsChange(steps.filter((_, at) => at !== index));
+    onChange({ steps: steps.filter((_, at) => at !== index), layout: layoutOf(movePosition(positions, `step:${steps[index].id}`)) });
     if (selectedKey === `step:${steps[index].id}`) setSelectedKey(undefined);
   };
   const moveStep = (from: number, to: number) => {
@@ -100,9 +118,15 @@ export function FlowEditor({ meta, triggers, inputs, steps, secretNames, hooks, 
     onStepsChange(reordered);
   };
   const removeTrigger = (index: number) => {
-    onTriggersChange(triggers.filter((_, at) => at !== index));
+    onChange({ triggers: triggers.filter((_, at) => at !== index), layout: layoutOf(movePosition(positions, `trigger:${triggers[index].id}`)) });
     setSelectedKey(undefined);
   };
+  const dropNode = (key: string, position: NodePosition) => {
+    onChange({ layout: { positions: { ...positions, [key]: position } } });
+    setDragging(undefined);
+  };
+  /** Forgets every dragged position: all nodes go back to the automatic layout. */
+  const tidyUp = () => onChange({ layout: undefined });
 
   const select = (key: string | undefined) => {
     // The end and the empty placeholder are where new blocks go: clicking them adds one.
@@ -204,6 +228,11 @@ export function FlowEditor({ meta, triggers, inputs, steps, secretNames, hooks, 
         + Block
       </button>
       <button onClick={() => (setSelectedKey(undefined), setAdding({ kind: 'trigger' }))}>+ Trigger</button>
+      {layout && (
+        <button onClick={tidyUp} title="Put every node back in its automatic place, in the order the blocks run">
+          Tidy up
+        </button>
+      )}
     </>
   );
 
@@ -211,11 +240,11 @@ export function FlowEditor({ meta, triggers, inputs, steps, secretNames, hooks, 
     <FlowCanvas
       graph={graph}
       selectedKey={selectedKey ?? (adding?.kind === 'step' && adding.index === steps.length ? (steps.length ? 'end' : 'placeholder') : undefined)}
-      stepCount={steps.length}
       renderNode={renderNode}
       onSelect={select}
       onInsert={(index) => (setSelectedKey(undefined), setAdding({ kind: 'step', index }))}
-      onMoveStep={moveStep}
+      onNodeDrag={(key, position) => setDragging({ key, position })}
+      onNodeDrop={dropNode}
       toolbar={toolbar}
       panel={panel}
     />

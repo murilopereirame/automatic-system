@@ -37,14 +37,15 @@ The workflow's name is edited in place in the page title.
   run, then the end. Drag the background to pan, Ctrl/⌘ + scroll or pinch to
   zoom, **Fit** to see all of it. Click a node to edit it in the side panel,
   use a `+` between two nodes (or **+ Block**, **+ Trigger**) to add one, drag
-  a block sideways to reorder it. Condition outcomes and "go back on
+  any node to place it where you like (saved with the workflow; **Tidy up**
+  puts everything back). Condition outcomes and "go back on
   rejection" are drawn as labelled edges. Everything about the canvas is in
   [FLOW_EDITOR.md](FLOW_EDITOR.md). Open **Run now** to add inputs: values a
   manual run asks for, see [Run now with inputs](#run-now-with-inputs).
   Triggers that are called from outside show their own URL in their panel.
   Without triggers, runs start only from **Run now**. Every block has a
   **Run only if** setting, shown on the node. See [EXPRESSIONS.md](EXPRESSIONS.md).
-- **Settings**: description, **Enabled** (disabled workflows ignore their
+- **Settings**: across the full width, description, **Enabled** (disabled workflows ignore their
   triggers, the title then says *disabled*), and **Files of finished runs**.
 - **Environment**: runtimes, environment variables, which secrets Claude may
   see, Claude memory files, MCP servers and expected volume mounts. Secrets

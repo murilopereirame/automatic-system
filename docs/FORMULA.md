@@ -60,6 +60,10 @@ notifications:               # webhook calls
 cleanup:                     # when a run's files are deleted, optional
   when: succeeded            # never (default) | succeeded | finished
 
+layout:                      # where nodes were dragged to in the flow editor, optional
+  positions:
+    "step:implement": { x: 340, y: 160 }
+
 steps:                       # the blocks, in order
   - id: implement
     type: claude
@@ -337,6 +341,16 @@ notifications:
 conversation) are deleted when the run ends: `never` (the default, also for
 formulas without `cleanup`), `succeeded`, or `finished` (succeeded, failed or
 cancelled). Runs can always be cleaned up by hand. See [CLEANUP.md](CLEANUP.md).
+
+## Layout
+
+`layout.positions` holds where nodes were dragged to in the flow editor, keyed
+by node: `manual` (Run now), `trigger:<id>`, `step:<id>` and `end`. Each is a
+point `{ x, y }` on the canvas, in pixels at 100 % zoom. Nodes without an entry,
+and every node when `layout` is left out, are placed automatically. The editor
+writes this section; there is no need to write it by hand. Runs ignore it, so
+moving nodes and saving does not make open runs outdated. See
+[FLOW_EDITOR.md](FLOW_EDITOR.md#moving-nodes).
 
 ## Blocks
 

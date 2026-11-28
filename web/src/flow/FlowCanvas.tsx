@@ -1,48 +1,50 @@
 /**
  * The canvas of the flow editor: draws the nodes and edges of a graph built by graph.ts on a dotted
- * background that can be panned and zoomed, and lets blocks be dragged to a new place in the order.
+ * background that can be panned and zoomed, and lets nodes be dragged anywhere on it.
  *
  * - Drag the background (or two fingers on a touch screen) to pan. Scroll to pan, Ctrl/⌘ + scroll
  *   or pinch to zoom. The toolbar zooms and fits the whole workflow in view.
- * - Click a node to select it. Drag a block sideways to move it; the other blocks make room.
+ * - Click a node to select it. Drag it to move it anywhere; it snaps to the dots of the grid.
  * - The "+" between two columns inserts a block there.
  *
  * What a node looks like and what selecting does is up to the caller (FlowEditor).
  */
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { columnX, dropIndex, stepColumn, type Graph, type GraphNode } from './graph.ts';
+import { snap, type Graph, type GraphNode } from './graph.ts';
+import type { NodePosition } from '../api.ts';
 import { fitView, initialView, zoomAround, type View } from './viewport.ts';
 
 interface Props {
   graph: Graph;
   selectedKey?: string;
-  /** How many blocks there are, to limit where a dragged block can go. */
-  stepCount: number;
   renderNode: (node: GraphNode) => ReactNode;
   onSelect: (key: string | undefined) => void;
   onInsert: (index: number) => void;
-  onMoveStep: (from: number, to: number) => void;
+  /** Called while a node is dragged, with where it is now, so edges can follow it. */
+  onNodeDrag: (key: string, position: NodePosition) => void;
+  /** Called when a node is let go after dragging, with where it ends up. */
+  onNodeDrop: (key: string, position: NodePosition) => void;
   /** Buttons shown at the top left of the canvas. */
   toolbar?: ReactNode;
   /** The side panel, when one is open. */
   panel?: ReactNode;
 }
 
-/** A block being dragged: where it started and how far the pointer moved, in screen pixels. */
+/** A node being pressed or dragged: where the pointer and the node started, and where the node is now. */
 interface Drag {
   key: string;
-  index: number;
   startX: number;
   startY: number;
-  dx: number;
-  dy: number;
+  nodeX: number;
+  nodeY: number;
+  position: NodePosition;
   moved: boolean;
 }
 
 /** How far a pointer may move before a press becomes a drag instead of a click. */
 const CLICK_SLOP = 4;
 
-export function FlowCanvas({ graph, selectedKey, stepCount, renderNode, onSelect, onInsert, onMoveStep, toolbar, panel }: Props) {
+export function FlowCanvas({ graph, selectedKey, renderNode, onSelect, onInsert, onNodeDrag, onNodeDrop, toolbar, panel }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<View>({ x: 40, y: 200, zoom: 1 });
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -166,35 +168,26 @@ export function FlowCanvas({ graph, selectedKey, stepCount, renderNode, onSelect
     if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    setDrag({ key: node.key, index: node.index ?? -1, startX: event.clientX, startY: event.clientY, dx: 0, dy: 0, moved: false });
+    setDrag({ key: node.key, startX: event.clientX, startY: event.clientY, nodeX: node.x, nodeY: node.y, position: { x: node.x, y: node.y }, moved: false });
   };
 
   const onNodePointerMove = (event: ReactPointerEvent, node: GraphNode) => {
     if (!drag || drag.key !== node.key) return;
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
-    // Only blocks move; "Run now", triggers and the end stay where they are.
-    const moved = node.kind === 'step' && (drag.moved || Math.abs(dx) + Math.abs(dy) > CLICK_SLOP);
-    setDrag({ ...drag, dx, dy, moved });
+    // The dashed "add the first block" card stays where it is.
+    const moved = node.kind !== 'placeholder' && (drag.moved || Math.abs(dx) + Math.abs(dy) > CLICK_SLOP);
+    if (!moved) return;
+    const position = { x: snap(drag.nodeX + dx / view.zoom), y: snap(drag.nodeY + dy / view.zoom) };
+    if (position.x !== drag.position.x || position.y !== drag.position.y || !drag.moved) onNodeDrag(node.key, position);
+    setDrag({ ...drag, position, moved });
   };
 
   const onNodePointerUp = (node: GraphNode) => {
     if (!drag || drag.key !== node.key) return;
     setDrag(undefined);
-    if (!drag.moved) return onSelect(node.key);
-    const target = dropIndex(node.x + drag.dx / view.zoom, stepCount);
-    if (target !== drag.index) onMoveStep(drag.index, target);
-  };
-
-  const dropTarget = drag?.moved ? dropIndex(graph.nodes.find((node) => node.key === drag.key)!.x + drag.dx / view.zoom, stepCount) : undefined;
-
-  /** While a block is dragged, the blocks between where it was and where it would land slide over to make room. */
-  const shiftOf = (node: GraphNode): number => {
-    if (!drag?.moved || dropTarget === undefined || node.kind !== 'step' || node.key === drag.key) return 0;
-    const index = node.index!;
-    if (drag.index < dropTarget && index > drag.index && index <= dropTarget) return -1;
-    if (drag.index > dropTarget && index < drag.index && index >= dropTarget) return 1;
-    return 0;
+    if (drag.moved) onNodeDrop(node.key, drag.position);
+    else onSelect(node.key);
   };
 
   const layerStyle: CSSProperties = { transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` };
@@ -234,24 +227,20 @@ export function FlowCanvas({ graph, selectedKey, stepCount, renderNode, onSelect
             </span>
           ))}
 
-        {dropTarget !== undefined && <div className="flow-drop-slot" style={{ left: columnX(stepColumn(dropTarget)), top: 0 }} />}
-
         {graph.nodes.map((node) => {
           const dragged = drag?.moved && drag.key === node.key;
-          const shift = shiftOf(node);
-          const transform = dragged ? `translate(${drag.dx / view.zoom}px, ${drag.dy / view.zoom}px)` : shift ? `translateX(${shift * (columnX(1) - columnX(0))}px)` : undefined;
           return (
             <div
               key={node.key}
               className={`flow-node flow-node-${node.kind}${node.key === selectedKey ? ' selected' : ''}${dragged ? ' lifted' : ''}`}
-              style={{ left: node.x, top: node.y, width: node.width, height: node.height, transform }}
+              style={{ left: node.x, top: node.y, width: node.width, height: node.height }}
               tabIndex={0}
               role="button"
               aria-pressed={node.key === selectedKey}
               onPointerDown={(event) => onNodePointerDown(event, node)}
               onPointerMove={(event) => onNodePointerMove(event, node)}
               onPointerUp={() => onNodePointerUp(node)}
-              onPointerCancel={() => setDrag(undefined)}
+              onPointerCancel={() => onNodePointerUp(node)}
               onKeyDown={(event) => (event.key === 'Enter' || event.key === ' ') && event.target === event.currentTarget && (event.preventDefault(), onSelect(node.key))}
             >
               {renderNode(node)}
@@ -289,7 +278,7 @@ export function FlowCanvas({ graph, selectedKey, stepCount, renderNode, onSelect
           Fit
         </button>
       </div>
-      <p className="flow-hint">Drag to pan · Ctrl + scroll to zoom · drag blocks to reorder</p>
+      <p className="flow-hint">Drag to pan · Ctrl + scroll to zoom · drag nodes to move them</p>
       {/* Keeps showing the last content while it slides out; `inert` keeps it out of reach meanwhile. */}
       <aside className={`flow-panel${panel ? ' open' : ''}`} inert={!panel}>
         {panel ?? lastPanel.current}

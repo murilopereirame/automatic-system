@@ -172,6 +172,29 @@ export interface WorkflowDefinition {
   steps: StepConfig[];
   /** What happens to the run's files when it finishes. Missing on workflows stored before cleanup existed, which means `never`. */
   cleanup?: CleanupPolicy;
+  /** Where the flow editor shows nodes that were moved by hand. Missing means every node is laid out automatically. */
+  layout?: FlowLayout;
+}
+
+/** A point on the flow editor's canvas. */
+export interface NodePosition {
+  x: number;
+  y: number;
+}
+
+/**
+ * Positions of the nodes someone moved in the flow editor (docs/FLOW_EDITOR.md), keyed by node:
+ * `manual`, `trigger:<id>`, `step:<id>` or `end`. Nodes without one are laid out automatically.
+ * Only the editor reads it: runs ignore it, and moving a node does not make open runs outdated.
+ */
+export interface FlowLayout {
+  positions: Record<string, NodePosition>;
+}
+
+/** The definition without the editor's layout: what a run actually depends on. */
+export function withoutLayout(definition: WorkflowDefinition): Omit<WorkflowDefinition, 'layout'> {
+  const { layout: _layout, ...rest } = definition;
+  return rest;
 }
 
 /** The cleanup policy of a definition, with the default for definitions stored before cleanup existed. */

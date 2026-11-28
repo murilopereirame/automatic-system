@@ -19,7 +19,7 @@ import * as workflows from '../store/workflows.js';
 import { diff } from '../diff.js';
 import { stepTypes } from '../steps/index.js';
 import { syncTriggers, triggerTypes } from '../triggers/index.js';
-import type { Run, RunEvent, Settings, Workflow, WorkflowVersion } from '../types.js';
+import { withoutLayout, type Run, type RunEvent, type Settings, type Workflow, type WorkflowVersion } from '../types.js';
 import { requireAuth } from './auth.js';
 
 type IdParams = { Params: { id: string } };
@@ -94,7 +94,8 @@ const MAX_EVENT_PAGE_SIZE = 1000;
 
 /** True when the workflow was edited since the run took (or last applied) its copy of the definition. */
 function isOutdated(run: Run, workflow: Workflow | undefined): boolean {
-  return workflow !== undefined && JSON.stringify(run.definition) !== JSON.stringify(workflow.definition);
+  // Moving nodes in the editor changes nothing a run does, so the layout is left out.
+  return workflow !== undefined && JSON.stringify(withoutLayout(run.definition)) !== JSON.stringify(withoutLayout(workflow.definition));
 }
 
 /** Open runs of a workflow that use an older definition than the saved one. */

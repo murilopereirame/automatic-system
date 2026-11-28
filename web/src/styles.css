@@ -738,8 +738,16 @@ input[type='checkbox'][role='switch']:disabled {
   border-bottom-color: var(--accent);
 }
 
+/* The Settings tab: full width like the other tabs, its fields side by side where they fit. */
 .workflow-settings {
-  max-width: 720px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
+  gap: 0 24px;
+  align-items: start;
+}
+
+.workflow-settings .wide-field {
+  grid-column: 1 / -1;
 }
 
 .tab-panel {
@@ -933,11 +941,6 @@ input[type='checkbox'][role='switch']:disabled {
   fill: var(--accent);
 }
 
-.flow-canvas.dragging .flow-edge,
-.flow-canvas.dragging .flow-edge-label {
-  opacity: 0.15;
-}
-
 .flow-edge-label {
   position: absolute;
   transform: translate(-50%, -50%);
@@ -975,7 +978,8 @@ input[type='checkbox'][role='switch']:disabled {
   cursor: pointer;
   border-radius: 10px;
   outline: none;
-  transition: transform var(--medium) var(--ease);
+  /* Nodes glide to their new place on "Tidy up" or when blocks are added or moved in the order. */
+  transition: left 250ms var(--ease), top 250ms var(--ease);
   animation: node-in var(--medium) var(--ease);
 }
 
@@ -1160,15 +1164,6 @@ input[type='checkbox'][role='switch']:disabled {
   color: var(--accent);
 }
 
-.flow-drop-slot {
-  position: absolute;
-  width: 240px;
-  height: 76px;
-  border: 2px dashed var(--accent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  transition: left var(--medium) var(--ease);
-}
 
 /* The "+" between two columns. */
 .flow-insert {
