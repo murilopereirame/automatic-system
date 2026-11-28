@@ -7,7 +7,7 @@ import { api, type RunDetail, type StepConfig } from '../api.ts';
 import { ApplyLatestCard } from '../components/ApplyLatestCard.tsx';
 import { ApprovalCard } from '../components/ApprovalCard.tsx';
 import { ErrorNote, LoadingOrError, PageHeader, StatusBadge } from '../components/common.tsx';
-import { OutputFiles } from '../components/OutputFiles.tsx';
+import { OutputFiles } from '../run-view/OutputFiles.tsx';
 import { RunPromptCard } from '../components/RunPromptCard.tsx';
 import { RunValuesCard } from '../components/RunValuesCard.tsx';
 import { Terminal } from '../components/Terminal.tsx';

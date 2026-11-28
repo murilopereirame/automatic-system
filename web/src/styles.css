@@ -2356,9 +2356,119 @@ button.activity-title:hover:not(:disabled) {
   margin-top: 12px;
 }
 
+.outputs-header {
+  flex-wrap: wrap;
+}
+
+.outputs-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.outputs-title h2 {
+  margin: 0;
+}
+
 .outputs .actions {
   display: flex;
   gap: 8px;
+}
+
+.outputs-where {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+/* A button that reads as a link, for small actions inside a sentence. */
+.link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link-button:hover:not(:disabled) {
+  background: none;
+  border-color: transparent;
+}
+
+.outputs-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+}
+
+.outputs-empty p {
+  margin: 0;
+}
+
+.outputs-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.outputs-toolbar input[type='search'] {
+  flex: 1 1 200px;
+  max-width: 320px;
+}
+
+.outputs-sort {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.output-folders {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.output-folder + .output-folder {
+  border-top: 1px solid var(--border);
+}
+
+.output-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 0;
+  background: var(--surface-2);
+  text-align: left;
+  white-space: normal;
+}
+
+.output-folder-header:hover:not(:disabled) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--surface-2) 70%, var(--border));
+}
+
+.output-folder-header[aria-expanded='false'] .activity-chevron {
+  transform: rotate(-45deg);
+}
+
+.output-folder-name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .output-list {
@@ -2368,22 +2478,112 @@ button.activity-title:hover:not(:disabled) {
 }
 
 .output-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--surface-2);
+  transition: background var(--medium) var(--ease);
+}
+
+.output-list li:first-child {
+  border-top: none;
+}
+
+.output-list.nested li {
+  padding-left: 34px;
+}
+
+.output-list li:hover {
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
+
+.output-list li.new {
+  background: color-mix(in srgb, var(--good-bg) 60%, transparent);
+}
+
+.output-list a {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 0;
-  border-top: 1px solid var(--border);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.output-list a:hover .output-name {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.output-name {
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.outputs > header {
-  flex-wrap: wrap;
-  gap: 8px;
+.output-size,
+.output-time {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  text-align: right;
 }
 
-.output-list li > span {
-  flex-shrink: 0;
-  white-space: nowrap;
+.output-size {
+  font-variant-numeric: tabular-nums;
+}
+
+.output-new {
+  background: var(--good-bg);
+  color: var(--good);
+}
+
+.output-icon {
+  --kind-color: var(--muted);
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  color: var(--kind-color);
+  background: color-mix(in srgb, var(--kind-color) 13%, transparent);
+}
+
+.output-icon-folder {
+  --kind-color: var(--attention);
+}
+
+.output-icon-image {
+  --kind-color: #8a63d2;
+}
+
+.output-icon-document {
+  --kind-color: var(--accent);
+}
+
+.output-icon-data {
+  --kind-color: var(--good);
+}
+
+.output-icon-code {
+  --kind-color: #c2703d;
+}
+
+.output-icon-archive {
+  --kind-color: #c2417a;
+}
+
+@media (max-width: 560px) {
+  .output-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .output-time {
+    display: none;
+  }
 }
 
 /* ---- Scrollbars and motion --------------------------------------------- */
