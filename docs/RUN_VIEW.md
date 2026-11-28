@@ -52,6 +52,10 @@ flowchart TB
 
 ![One block selected: details, then its log](images/run-view-block.png)
 
+- **Output files.** Under the activity: grouped by folder, with file kinds,
+  sizes, a filter and sort, and new files marked. See
+  [OUTPUTS.md](OUTPUTS.md#downloading).
+
 On screens narrower than 760 px the timeline sits above the activity and
 scrolls inside its own box.
 
@@ -101,6 +105,7 @@ sequenceDiagram
 | `web/src/run-view/StepTimeline.tsx` | The block timeline |
 | `web/src/run-view/StepDetails.tsx` | Details of the selected block |
 | `web/src/run-view/ActivityLog.tsx` | The log in sections, each rendered by `components/EventLog.tsx` |
+| `web/src/run-view/OutputFiles.tsx`, `output-files.ts` | The output file list; grouping, sorting and filtering are pure functions |
 | `web/src/run-view/use-now.ts` | A clock that ticks every second while the run is open |
 | `server/src/engine/engine.ts` | `markStarted` / `markEnded` record `context.timing` |
 

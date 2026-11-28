@@ -72,9 +72,19 @@ A command block uses the variable:
 
 ## Downloading
 
-The run page has an **Output files** card under the log. It lists the files
-newest first with their size, refreshes when a block starts or finishes, and
-has **Download all (.tar.gz)**. The same is available over the API:
+The run page has an **Output files** card under the log. It groups the files
+by folder (each folder can be folded, with its file count and size), gives
+each file an icon by kind (image, document, data, code, archive, log), and
+shows size and age. Files that appear while the page is open are marked
+*new*. From six files on, a filter box and a sort (newest, name, largest)
+appear. It refreshes when a block starts or finishes, has **Download all
+(.tar.gz)**, and **Copy folder path** for the path inside the container.
+Files only download: none is opened inside the page.
+
+![Output files of a run](images/run-outputs.png)
+
+Code in `web/src/run-view/OutputFiles.tsx` and `output-files.ts`, tests in
+`web/test/output-files.test.ts`. The same is available over the API:
 
 | Request | Answer |
 |---------|--------|

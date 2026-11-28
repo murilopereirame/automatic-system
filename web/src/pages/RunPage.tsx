@@ -92,7 +92,7 @@ export function RunPage({ runId }: { runId: string }) {
   const triggerText = triggerSummary(run.context);
   const followToggle = (
     <label className="field checkbox inline" title="Keep the newest activity in view while the run is going">
-      <input type="checkbox" checked={follow} onChange={(event) => setFollow(event.target.checked)} />
+      <input type="checkbox" role="switch" checked={follow} onChange={(event) => setFollow(event.target.checked)} />
       <span>Follow</span>
     </label>
   );

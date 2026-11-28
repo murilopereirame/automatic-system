@@ -12,7 +12,9 @@
  */
 import { memo, type ComponentProps } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
+import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
+import { ALIASES, GRAMMARS } from '../code/highlight.ts';
 
 const SAFE_PROTOCOLS = ['http:', 'https:', 'mailto:'];
 
@@ -51,11 +53,15 @@ function Image({ src, alt }: ComponentProps<'img'> & { node?: unknown }) {
 
 const COMPONENTS: Components = { a: Link, img: Image };
 const PLUGINS = [remarkGfm];
+/** Code blocks with a known language (```ts, ```json, ...) are highlighted; others stay plain. No guessing. */
+const REHYPE_PLUGINS: NonNullable<ComponentProps<typeof ReactMarkdown>['rehypePlugins']> = [
+  [rehypeHighlight, { languages: GRAMMARS, aliases: ALIASES, detect: false, prefix: 'hl-' }],
+];
 
 function MarkdownView({ text, className }: { text: string; className?: string }) {
   return (
     <div className={className ? `markdown ${className}` : 'markdown'}>
-      <ReactMarkdown remarkPlugins={PLUGINS} components={COMPONENTS} urlTransform={safeUrl}>
+      <ReactMarkdown remarkPlugins={PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={COMPONENTS} urlTransform={safeUrl}>
         {text}
       </ReactMarkdown>
     </div>

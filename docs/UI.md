@@ -47,10 +47,19 @@ The workflow's name is edited in place in the page title.
 - **Settings**: description, **Enabled** (disabled workflows ignore their
   triggers, the title then says *disabled*), and **Files of finished runs**.
 - **Environment**: runtimes, environment variables, which secrets Claude may
-  see, Claude memory files, MCP servers and expected volume mounts.
+  see, Claude memory files, MCP servers and expected volume mounts. Secrets
+  are picked in a search-and-multiselect box: type to filter, Enter or a
+  click to pick, × on a chip to remove.
+
+  ![Picking secrets](images/secrets-multiselect.png)
 - **Notifications**: the webhook calls, with templated URL, headers and body.
-- **Code**: the formula YAML. Edit and press **Apply to blocks**, and the
-  blocks update. This is the same text **Export formula** downloads.
+  Under each webhook a **Preview** shows the request as it would go out, with
+  example values (see [Notification preview](#notification-preview)).
+- **Code**: the formula YAML, syntax highlighted. Edit and press **Apply to
+  blocks**, and the blocks update. This is the same text **Export formula**
+  downloads.
+
+  ![The formula in the Code tab](images/formula-code.png)
 - **History**: every saved version with its note, the line diff of a version
   against the one before (or any other), **Restore this version**, and
   **Export with history**. The title shows the current version, e.g. `v3`.
@@ -58,6 +67,25 @@ The workflow's name is edited in place in the page title.
   a note for the new version. See [VERSIONING.md](VERSIONING.md).
 
 ![Environment tab](images/environment.png)
+
+On/off settings (Enabled, Pause before this block runs, Required, read only,
+Also on localhost, Read as JSON, Follow) are switches: real checkboxes with
+`role="switch"`, drawn as a track and knob in `styles.css`.
+
+### Notification preview
+
+![Notification preview](images/notification-preview.png)
+
+The preview renders each webhook with the server's own code
+(`server/src/notify-request.ts`, shared with `notify.ts`), so it shows the
+method, URL, headers and body that would really be sent. The select above
+the webhooks picks the situation: a run needs you, a run failed, or a
+"Send notification" block. Values are examples: a ClickUp-style task, the
+workflow's **Run now** inputs (their default, or `<label>`), and a run link
+on this page's address. Secrets are never loaded into the page: each
+`{{secrets.NAME}}` shows as a *secret NAME* placeholder. A body sent as JSON
+that is not valid JSON is flagged, usually a value that is missing `| json`.
+Code in `web/src/notifications/`, tests in `web/test/notification-preview.test.ts`.
 
 ### Applying a save to open runs
 
@@ -210,6 +238,9 @@ for reduced motion. While a page loads its data it shows a spinner
 | `web/src/pages/` | One file per page |
 | `web/src/flow/` | The flow editor of the Blocks tab, see [FLOW_EDITOR.md](FLOW_EDITOR.md) |
 | `web/src/run-view/` | Parts of the run page: summary, block timeline, block details, sectioned log, see [RUN_VIEW.md](RUN_VIEW.md) |
+| `web/src/code/highlight.ts`, `components/CodeBlock.tsx`, `components/CodeEditor.tsx` | Syntax highlighting (see below), read-only and editable |
+| `web/src/components/MultiSelect.tsx` | Search-and-multiselect box, used for secrets |
+| `web/src/notifications/` | Notification preview |
 | `web/src/components/FieldInput.tsx` | Renders one setting from its field description |
 | `web/src/components/EventLog.tsx` | Renders run events by type |
 | `web/src/components/Markdown.tsx` | Renders Claude's text as Markdown, safely (see [MARKDOWN.md](MARKDOWN.md)) |
@@ -217,6 +248,20 @@ for reduced motion. While a page loads its data it shows a spinner
 | `web/src/run-log.ts`, `web/src/use-run-log.ts` | The run page's bounded, paged, batched view of a run's log |
 | `web/src/components/Terminal.tsx` | xterm.js terminal for the web shell |
 | `web/src/components/ApplyLatestCard.tsx` | Run page card that previews and applies workflow edits to the run |
+
+### Syntax highlighting
+
+Code is highlighted with [lowlight](https://github.com/wooorm/lowlight)
+(highlight.js grammars) in `web/src/code/highlight.ts`: the formula YAML in the
+Code tab, the MCP servers JSON, the compose override, commands (bash), JSON
+payloads, tool inputs and block outputs in the run log, and fenced code blocks
+with a language in Claude's Markdown (through `rehype-highlight`). Only the
+languages listed in `GRAMMARS` are bundled; others, and texts over 50,000
+characters, stay plain. lowlight returns a syntax tree that is turned into
+React elements, so nothing goes through `innerHTML`. Editable code is a
+transparent textarea over a highlighted copy (`CodeEditor.tsx`). Code sits on
+the dark code background in both themes, so one set of `.hl-*` colours serves
+light and dark.
 
 The forms of blocks and triggers are generated from the catalogue the server
 returns at `GET /api/meta`. Adding a block type on the server needs no UI

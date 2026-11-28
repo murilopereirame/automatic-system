@@ -45,7 +45,7 @@ flowchart LR
 2. **Workflows > Import formula**: choose `examples/clickup-to-pr.formula.yaml`.
 3. Open the workflow, set the repository in the "Clone the repository" block, review the prompts, and adjust the notification webhook.
 4. On the **Environment** tab, check that only the Claude token is exposed to Claude, and that the **Network** list contains the hosts the work needs (GitHub, your package registry, your staging system).
-5. Tick **Enabled** and save.
+5. Turn on **Enabled** and save.
 
 ## What is stored where
 

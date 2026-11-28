@@ -5,6 +5,7 @@
  */
 import { useState, type CSSProperties } from 'react';
 import type { Run, StepConfig } from '../api.ts';
+import { CodeBlock } from '../components/CodeBlock.tsx';
 import { NodeIcon, nodeStyle } from '../flow/node-style.tsx';
 import { conditionOutcome, formatDuration, STATE_LABEL, stepDuration, type StepState } from './run-steps.ts';
 
@@ -62,7 +63,7 @@ export function StepDetails({ run, step, state, now }: Props) {
           <button className="ghost" onClick={() => setShowOutput(!showOutput)} aria-expanded={showOutput}>
             {showOutput ? 'Hide output' : 'Show output'}
           </button>
-          {showOutput && <pre>{JSON.stringify(result.output, null, 2)}</pre>}
+          {showOutput && <CodeBlock language="json" code={JSON.stringify(result.output, null, 2)} />}
         </div>
       )}
     </div>

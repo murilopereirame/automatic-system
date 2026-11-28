@@ -2,6 +2,9 @@
 import { useState } from 'react';
 import type { Environment, Requirements, ServiceSpec } from '../api.ts';
 import { ListEditor } from './ListEditor.tsx';
+import { MultiSelect } from './MultiSelect.tsx';
+import { CodeBlock } from './CodeBlock.tsx';
+import { CodeEditor } from './CodeEditor.tsx';
 
 interface Props {
   environment: Environment;
@@ -17,9 +20,6 @@ export function EnvironmentEditor({ environment, secretNames, requirements, egre
   const set = (changes: Partial<Environment>) => onChange({ ...environment, ...changes });
   const envRows = Object.entries(environment.env).map(([name, value]) => ({ name, value }));
   const allSecrets = [...new Set([...secretNames, ...environment.secrets])].sort();
-
-  const toggleSecret = (name: string, exposed: boolean) =>
-    set({ secrets: exposed ? [...environment.secrets, name] : environment.secrets.filter((secret) => secret !== name) });
 
   return (
     <div className="sections">
@@ -57,19 +57,17 @@ export function EnvironmentEditor({ environment, secretNames, requirements, egre
       <section className="card">
         <h2>Secrets exposed to Claude</h2>
         <p className="muted">
-          Checked secrets become environment variables for Claude, commands and the web shell. Leave tokens that only blocks need (for example GITHUB_TOKEN for the pull request block) unchecked, so Claude cannot use them. The formula
+          Picked secrets become environment variables for Claude, commands and the web shell. Leave tokens that only blocks need (for example GITHUB_TOKEN for the pull request block) out, so Claude cannot use them. The formula
           stores names only.
         </p>
-        {allSecrets.length === 0 && <p className="empty">No secrets stored yet. Add them under Settings.</p>}
-        <div className="checks">
-          {allSecrets.map((name) => (
-            <label key={name} className="field checkbox">
-              <input type="checkbox" checked={environment.secrets.includes(name)} onChange={(event) => toggleSecret(name, event.target.checked)} />
-              <code>{name}</code>
-              {!secretNames.includes(name) && <small className="warning">no value stored</small>}
-            </label>
-          ))}
-        </div>
+        <MultiSelect
+          label="Secrets exposed to Claude"
+          options={allSecrets.map((name) => ({ value: name, note: !secretNames.includes(name) && <small className="warning">no value stored</small> }))}
+          selected={environment.secrets}
+          onChange={(secrets) => set({ secrets })}
+          placeholder="Search secrets to expose…"
+          emptyText="No secrets stored yet. Add them under Settings."
+        />
       </section>
 
       <section className="card">
@@ -118,7 +116,7 @@ export function EnvironmentEditor({ environment, secretNames, requirements, egre
         <h2>Services</h2>
         <p className="muted">
           Helper containers the workflow needs, such as a database for tests. They run next to the sandbox as their own compose services, so the sandbox never needs access to Docker. Claude and commands reach them by name, for
-          example <code>mongo:27017</code>. A run waits for them and fails with a clear message when one is missing. Tick “Also on localhost” when the project only accepts <code>localhost</code> URLs: the server then forwards{' '}
+          example <code>mongo:27017</code>. A run waits for them and fails with a clear message when one is missing. Turn on “Also on localhost” when the project only accepts <code>localhost</code> URLs: the server then forwards{' '}
           <code>localhost:&lt;port&gt;</code> to the service, for runs and the web shell.
         </p>
         <ListEditor items={environment.services} onChange={(services) => set({ services })} blank={(): ServiceSpec => ({ name: '', image: '', ports: [], env: {} })} addLabel="Add service">
@@ -136,7 +134,7 @@ export function EnvironmentEditor({ environment, secretNames, requirements, egre
                 onChange={(event) => update({ env: toEnv(event.target.value) })}
               />
               <label className="field checkbox inline">
-                <input type="checkbox" checked={service.forwardToLocalhost === true} onChange={(event) => update({ forwardToLocalhost: event.target.checked || undefined })} />
+                <input type="checkbox" role="switch" checked={service.forwardToLocalhost === true} onChange={(event) => update({ forwardToLocalhost: event.target.checked || undefined })} />
                 <span>
                   Also on <code>localhost</code>, for projects that only accept loopback URLs
                 </span>
@@ -194,7 +192,7 @@ export function EnvironmentEditor({ environment, secretNames, requirements, egre
                 <input placeholder="./host/path or volume" value={mount.source} onChange={(event) => update({ source: event.target.value })} />
                 <input placeholder="/container/path" value={mount.target} onChange={(event) => update({ target: event.target.value })} />
                 <label className="field checkbox inline">
-                  <input type="checkbox" checked={mount.readOnly === true} onChange={(event) => update({ readOnly: event.target.checked })} />
+                  <input type="checkbox" role="switch" checked={mount.readOnly === true} onChange={(event) => update({ readOnly: event.target.checked })} />
                   <span>read only</span>
                 </label>
                 {status && <span className={status.present ? 'status status-succeeded' : 'status status-failed'}>{status.present ? 'Mounted' : 'Missing'}</span>}
@@ -210,7 +208,7 @@ export function EnvironmentEditor({ environment, secretNames, requirements, egre
           <p className="muted">
             Services and mounts are created by Docker when the deployment starts. Save this as <code>compose.override.yaml</code> next to <code>compose.yaml</code> and run <code>docker compose up -d</code>.
           </p>
-          <pre className="code">{composeOverride(environment)}</pre>
+          <CodeBlock className="code" language="yaml" code={composeOverride(environment)} />
         </section>
       )}
     </div>
@@ -268,7 +266,7 @@ export function JsonEditor({ value, onChange }: { value: unknown; onChange: (val
 
   return (
     <>
-      <textarea className="mono" rows={Math.max(4, text.split('\n').length)} value={text} onChange={(event) => edit(event.target.value)} spellCheck={false} />
+      <CodeEditor language="json" rows={Math.max(4, text.split('\n').length)} value={text} onChange={edit} aria-label="MCP servers JSON" />
       {error && <p className="error">{error}</p>}
     </>
   );

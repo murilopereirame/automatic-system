@@ -447,6 +447,57 @@ input[type='checkbox'] {
   width: auto;
 }
 
+/*
+ * On/off settings are switches: a checkbox with role="switch", drawn as a track with a knob.
+ * It stays a real checkbox, so keyboard, forms and screen readers work as before.
+ */
+input[type='checkbox'][role='switch'] {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+
+input[type='checkbox'][role='switch']::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(16 24 40 / 0.3);
+  transition: transform var(--fast) var(--ease);
+}
+
+input[type='checkbox'][role='switch']:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+input[type='checkbox'][role='switch']:checked::after {
+  transform: translateX(14px);
+}
+
+input[type='checkbox'][role='switch']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input[type='checkbox'][role='switch']:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .field {
   display: grid;
   gap: 4px;
@@ -517,6 +568,134 @@ input[type='checkbox'] {
   .list-row {
     flex-wrap: wrap;
   }
+}
+
+.multiselect {
+  position: relative;
+}
+
+.multiselect-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: text;
+  transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+}
+
+.multiselect.open .multiselect-control,
+.multiselect-control:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.multiselect-control input {
+  flex: 1 1 140px;
+  min-width: 100px;
+  border: none;
+  padding: 4px;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 4px 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+  overflow-wrap: anywhere;
+}
+
+.chip code {
+  background: none;
+  padding: 0;
+}
+
+.chip-remove {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  line-height: 1;
+}
+
+.chip-remove:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--surface);
+  color: var(--bad);
+}
+
+.multiselect-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  animation: menu-in var(--fast) var(--ease);
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.multiselect-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.multiselect-option.active {
+  background: var(--surface-2);
+}
+
+.multiselect-check {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--accent-text);
+}
+
+.multiselect-option.selected .multiselect-check {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.multiselect-empty {
+  padding: 8px;
+  color: var(--muted);
 }
 
 .checks {
@@ -2610,4 +2789,226 @@ details[open] > :not(summary) {
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
   }
+}
+
+/* ---- Code and syntax highlighting (code/highlight.ts) ------------------- */
+
+/* Code always sits on the dark code background, in both themes, so one set of token colours serves both. */
+.code-block {
+  background: var(--code-bg);
+  color: var(--code-text);
+  padding: 8px 10px;
+  border-radius: 6px;
+  max-height: 360px;
+  overflow: auto;
+  line-height: 1.5;
+}
+
+.code-block code,
+.code-editor-layer code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* A command from the log, with a prompt in front that is not part of the copied text. */
+.command-line code::before {
+  content: '$ ';
+  color: #7d8799;
+  user-select: none;
+}
+
+.hl-comment,
+.hl-quote {
+  color: #7d8799;
+  font-style: italic;
+}
+
+.hl-keyword,
+.hl-selector-tag,
+.hl-meta .hl-keyword,
+.hl-doctag {
+  color: #c792ea;
+}
+
+.hl-string,
+.hl-regexp,
+.hl-addition,
+.hl-meta .hl-string {
+  color: #a5d6a7;
+}
+
+.hl-number,
+.hl-literal,
+.hl-symbol,
+.hl-bullet {
+  color: #f7a76c;
+}
+
+.hl-attr,
+.hl-attribute,
+.hl-property,
+.hl-selector-attr,
+.hl-selector-class,
+.hl-variable,
+.hl-template-variable {
+  color: #82aaff;
+}
+
+.hl-title,
+.hl-section,
+.hl-name,
+.hl-selector-id,
+.hl-built_in,
+.hl-type {
+  color: #ffcb6b;
+}
+
+.hl-deletion {
+  color: #f07178;
+}
+
+.hl-meta,
+.hl-punctuation {
+  color: #a6b0c3;
+}
+
+.hl-emphasis {
+  font-style: italic;
+}
+
+.hl-strong {
+  font-weight: 700;
+}
+
+/* Editable code: a transparent textarea over a highlighted copy, with exactly the same box and font. */
+.code-editor-wrap {
+  position: relative;
+  margin-bottom: 12px;
+  border-radius: 6px;
+  background: var(--code-bg);
+}
+
+.code-editor-layer,
+.code-editor-input {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.code-editor-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: var(--code-text);
+  pointer-events: none;
+}
+
+.code-editor-input {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: calc(var(--rows, 10) * 1.5em + 22px);
+  color: transparent;
+  background: transparent;
+  caret-color: var(--code-text);
+  resize: vertical;
+}
+
+.code-editor-input::selection {
+  color: transparent;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.code-editor-input:focus {
+  border-color: var(--accent);
+}
+
+/* ---- Notification preview ---------------------------------------------- */
+
+.notification-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.notification-toolbar select {
+  width: auto;
+}
+
+.notification-preview {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-2) 45%, transparent);
+  min-width: 0;
+}
+
+.notification-request {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.notification-request .method {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
+.notification-url {
+  min-width: 0;
+}
+
+.notification-headers {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.notification-headers > div {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.notification-headers dt {
+  color: var(--muted);
+}
+
+.notification-headers dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.secret-placeholder {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--attention);
+  background: var(--attention-bg);
+}
+
+.notification-preview .warning {
+  margin: 0;
 }

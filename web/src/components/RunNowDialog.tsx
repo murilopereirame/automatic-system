@@ -4,6 +4,7 @@
  * payload of the run, which the dialog shows before it is sent.
  */
 import { useState, type FormEvent } from 'react';
+import { CodeBlock } from './CodeBlock.tsx';
 import { api, type FieldSpec, type RunInput, type Workflow } from '../api.ts';
 import { navigate } from '../router.ts';
 import { ErrorNote } from './common.tsx';
@@ -92,7 +93,7 @@ function RunNowDialog({ workflow, onClose }: DialogProps) {
         </div>
         <details className="payload-preview">
           <summary>Trigger payload</summary>
-          <pre>{payload ? JSON.stringify(payload, null, 2) : payloadError}</pre>
+          {payload ? <CodeBlock language="json" code={JSON.stringify(payload, null, 2)} /> : <pre>{payloadError}</pre>}
         </details>
         <ErrorNote message={error} />
         <div className="actions">

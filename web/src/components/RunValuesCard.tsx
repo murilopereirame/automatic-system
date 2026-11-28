@@ -40,7 +40,7 @@ export function RunValuesCard({ run, onChanged }: { run: Run; onChanged: () => v
       try {
         parsed = JSON.parse(value);
       } catch {
-        return setError('This is not valid JSON. Untick "Read as JSON" to add it as text.');
+        return setError('This is not valid JSON. Turn off "Read as JSON" to add it as text.');
       }
     }
     api.setRunValue(run.id, name.trim(), parsed).then(() => (setEditing(false), setError(undefined), onChanged()), fail);
@@ -104,7 +104,7 @@ export function RunValuesCard({ run, onChanged }: { run: Run; onChanged: () => v
             <textarea rows={3} value={value} onChange={(event) => setValue(event.target.value)} />
           </label>
           <label className="field checkbox">
-            <input type="checkbox" checked={isJson} onChange={(event) => setIsJson(event.target.checked)} />
+            <input type="checkbox" role="switch" checked={isJson} onChange={(event) => setIsJson(event.target.checked)} />
             <span>Read as JSON</span>
             <small>For numbers, true/false, lists and objects.</small>
           </label>

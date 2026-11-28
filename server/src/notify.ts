@@ -13,7 +13,7 @@
 import { config } from './config.js';
 import { errorMessage } from './errors.js';
 import { getSecret, listSecretNames } from './store/secrets.js';
-import { renderString } from './template.js';
+import { renderWebhook } from './notify-request.js';
 import type { NotificationWebhook, Run } from './types.js';
 
 export interface Notification {
@@ -22,9 +22,6 @@ export interface Notification {
   /** Restricts delivery to the webhook with this name. */
   channel?: string;
 }
-
-/** Used when a webhook does not define its own body. */
-const DEFAULT_BODY = '{"title": {{title | json}}, "message": {{message | json}}, "url": {{run.url | json}}}';
 
 function templateScope(run: Run, notification: Notification): Record<string, unknown> {
   return {
@@ -40,16 +37,8 @@ function templateScope(run: Run, notification: Notification): Record<string, unk
 }
 
 async function callWebhook(webhook: NotificationWebhook, scope: Record<string, unknown>): Promise<void> {
-  const method = (webhook.method || 'POST').toUpperCase();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  for (const [name, value] of Object.entries(webhook.headers ?? {})) headers[name] = renderString(value, scope);
-
-  const response = await fetch(renderString(webhook.url, scope), {
-    method,
-    headers,
-    body: method === 'GET' ? undefined : renderString(webhook.body || DEFAULT_BODY, scope),
-    signal: AbortSignal.timeout(15_000),
-  });
+  const { method, url, headers, body } = renderWebhook(webhook, scope);
+  const response = await fetch(url, { method, headers, body, signal: AbortSignal.timeout(15_000) });
   if (!response.ok) throw new Error(`answered ${response.status}`);
 }
 
