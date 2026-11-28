@@ -221,7 +221,7 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
               <input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
             </label>
             <label className="field checkbox">
-              <input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />
+              <input type="checkbox" role="switch" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />
               <span>Enabled</span>
               <small>Disabled workflows ignore their triggers.</small>
             </label>
@@ -247,7 +247,7 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
             onChange={(environment) => setDefinition({ environment })}
           />
         )}
-        {tab === 'Notifications' && <NotificationsEditor notifications={draft.definition.notifications} onChange={(notifications) => setDefinition({ notifications })} />}
+        {tab === 'Notifications' && <NotificationsEditor notifications={draft.definition.notifications} onChange={(notifications) => setDefinition({ notifications })} workflowName={draft.name} inputs={draft.definition.inputs} />}
         {tab === 'History' && saved && <VersionHistory workflow={saved} dirty={dirty} onRestored={restored} onExport={() => exportFormula(true)} />}
         {tab === 'Code' && <CodeView draft={draft} onApply={(applied) => (setDraft(applied), setTab('Blocks'))} />}
       </div>

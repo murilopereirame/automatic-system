@@ -21,7 +21,7 @@ environment:
       forwardToLocalhost: true   # localhost:27017 -> mongo:27017
 ```
 
-In the editor it is the "Also on localhost" checkbox of a service, on the
+In the editor it is the "Also on localhost" switch of a service, on the
 Environment tab.
 
 ## How it works

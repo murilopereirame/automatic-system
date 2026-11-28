@@ -1,10 +1,16 @@
 /** Editor for the notification webhooks of a workflow. */
-import type { NotificationWebhook } from '../api.ts';
+import { useState } from 'react';
+import type { NotificationWebhook, RunInput } from '../api.ts';
+import { NotificationPreview } from '../notifications/NotificationPreview.tsx';
+import { PREVIEW_EVENTS, type PreviewEvent } from '../notifications/preview.ts';
 import { ListEditor } from './ListEditor.tsx';
 
 interface Props {
   notifications: NotificationWebhook[];
   onChange: (notifications: NotificationWebhook[]) => void;
+  /** For the preview: the workflow's name and the inputs of "Run now", which fill `{{trigger...}}`. */
+  workflowName: string;
+  inputs?: RunInput[];
 }
 
 const headersToText = (headers: Record<string, string> = {}) =>
@@ -21,7 +27,9 @@ function textToHeaders(text: string): Record<string, string> {
   return Object.fromEntries(pairs);
 }
 
-export function NotificationsEditor({ notifications, onChange }: Props) {
+export function NotificationsEditor({ notifications, onChange, workflowName, inputs }: Props) {
+  const [event, setEvent] = useState<PreviewEvent>('approval');
+  const previewOptions = { workflowName, inputs, event, origin: window.location.origin };
   return (
     <div className="sections">
       <section className="card">
@@ -43,6 +51,19 @@ export function NotificationsEditor({ notifications, onChange }: Props) {
             Add <code>| json</code> inside JSON bodies and <code>| url</code> inside URLs, for example <code>{'{{message | json}}'}</code>
           </li>
         </ul>
+
+        {notifications.length > 0 && (
+          <div className="notification-toolbar">
+            <span className="muted">Previews below use example values, as sent when</span>
+            <select value={event} onChange={(change) => setEvent(change.target.value as PreviewEvent)} aria-label="Situation to preview">
+              {Object.entries(PREVIEW_EVENTS).map(([key, value]) => (
+                <option key={key} value={key}>
+                  {value.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <ListEditor
           items={notifications}
@@ -79,6 +100,10 @@ export function NotificationsEditor({ notifications, onChange }: Props) {
                 <textarea className="mono" rows={3} placeholder={'{"title": {{title | json}}, "message": {{message | json}}, "url": {{run.url | json}}}'} value={webhook.body ?? ''} onChange={(event) => update({ body: event.target.value })} />
                 <small>Leave empty to send the JSON shown as placeholder.</small>
               </label>
+              <details className="notification-preview-toggle" open>
+                <summary>Preview</summary>
+                <NotificationPreview webhook={webhook} options={previewOptions} />
+              </details>
             </div>
           )}
         </ListEditor>

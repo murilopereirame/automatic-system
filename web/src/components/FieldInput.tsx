@@ -29,7 +29,7 @@ export function FieldInput({ field, value, onChange, secretNames, earlierSteps, 
     case 'boolean':
       return (
         <label className="field checkbox">
-          <input type="checkbox" checked={current === true} onChange={(event) => onChange(event.target.checked)} />
+          <input type="checkbox" role="switch" checked={current === true} onChange={(event) => onChange(event.target.checked)} />
           <span>{field.label}</span>
           {field.help && <small>{field.help}</small>}
         </label>

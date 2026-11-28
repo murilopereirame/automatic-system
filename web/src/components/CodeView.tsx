@@ -4,6 +4,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type WorkflowDraft } from '../api.ts';
+import { CodeEditor } from './CodeEditor.tsx';
 import { ErrorNote } from './common.tsx';
 
 interface Props {
@@ -29,7 +30,7 @@ export function CodeView({ draft, onApply }: Props) {
     <section className="card">
       <h2>Formula</h2>
       <p className="muted">The same workflow as code. Edit it here and apply, or keep this file in your repository and import it after a redeploy.</p>
-      <textarea className="mono code-editor" value={text} onChange={(event) => setText(event.target.value)} spellCheck={false} rows={Math.max(20, text.split('\n').length + 1)} />
+      <CodeEditor language="yaml" value={text} onChange={setText} rows={Math.max(20, text.split('\n').length + 1)} aria-label="Formula YAML" />
       <ErrorNote message={error} />
       <div className="actions">
         <button className="primary" disabled={text === original} onClick={apply}>

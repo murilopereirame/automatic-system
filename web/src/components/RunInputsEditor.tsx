@@ -105,7 +105,7 @@ export function RunInputsEditor({ inputs, onChange }: Props) {
             </label>
             {input.type !== 'boolean' && (
               <label className="field checkbox">
-                <input type="checkbox" checked={input.required === true} onChange={(event) => update({ required: event.target.checked || undefined })} />
+                <input type="checkbox" role="switch" checked={input.required === true} onChange={(event) => update({ required: event.target.checked || undefined })} />
                 <span>Required</span>
                 <small>The run does not start while this is empty.</small>
               </label>

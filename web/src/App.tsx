@@ -55,7 +55,7 @@ function Shell({ onSignOut }: { onSignOut: () => void }) {
           Sign out
         </button>
       </header>
-      <main className={section === 'workflows' && route[1] ? 'wide' : undefined}>
+      <main className={section === 'workflows' && route[1] ? 'wide' : section === 'runs' && route[1] ? 'roomy' : undefined}>
         {/* Keyed by the route so each page plays its short entry animation. */}
         <div className="page" key={route.slice(0, 2).join('/')}>
           {renderPage(route)}

@@ -21,7 +21,7 @@ Names are made of letters, digits and `_`, and dots nest: `staging.url` and
 reads as empty text in a template and `null` in an expression, so a block can
 check for it.
 
-Values are text by default. Tick **Read as JSON** to add a number,
+Values are text by default. Turn on **Read as JSON** to add a number,
 `true`/`false`, a list or an object. A value is at most 64 KB.
 
 ## When a value is used

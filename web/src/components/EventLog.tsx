@@ -6,6 +6,7 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { RunEvent } from '../api.ts';
 import { clipText, mergeOutput, TEXT_PREVIEW_CHARS } from '../run-log.ts';
+import { CodeBlock } from './CodeBlock.tsx';
 import { Markdown } from './Markdown.tsx';
 
 const json = (value: unknown) => JSON.stringify(value, null, 2);
@@ -31,7 +32,7 @@ function Collapsible({ summary, children }: { summary: ReactNode; children: () =
  * Text that may be huge (command output, tool results, payloads). Shows TEXT_PREVIEW_CHARS of it, the end
  * for output, and a button for the rest.
  */
-function LongText({ text, keep = 'start', as = 'pre' }: { text: string; keep?: 'start' | 'end'; as?: 'pre' | 'markdown' }) {
+function LongText({ text, keep = 'start', as = 'pre', language }: { text: string; keep?: 'start' | 'end'; as?: 'pre' | 'markdown'; language?: string }) {
   const [full, setFull] = useState(false);
   const { shown, hidden } = full ? { shown: text, hidden: 0 } : clipText(text, TEXT_PREVIEW_CHARS, keep);
   // Output reads like a terminal: keep its box scrolled to the newest line unless the person scrolled up.
@@ -51,9 +52,7 @@ function LongText({ text, keep = 'start', as = 'pre' }: { text: string; keep?: '
   );
   const body =
     as === 'pre' ? (
-      <pre ref={box} onScroll={keep === 'end' ? onScroll : undefined}>
-        {shown}
-      </pre>
+      <CodeBlock ref={box} code={shown} language={hidden > 0 ? undefined : language} onScroll={keep === 'end' ? onScroll : undefined} />
     ) : (
       <Markdown text={shown} />
     );
@@ -71,11 +70,11 @@ function describe(event: RunEvent): { label: string; tone?: string; body: ReactN
   const data = event.data as Record<string, any>;
   switch (event.type) {
     case 'triggered':
-      return { label: 'Triggered', body: <Collapsible summary={data.triggerId && data.triggerId !== data.trigger ? `by ${data.triggerId} (${data.trigger})` : `by ${data.trigger}`}>{() => <LongText text={json(data.payload)} />}</Collapsible> };
+      return { label: 'Triggered', body: <Collapsible summary={data.triggerId && data.triggerId !== data.trigger ? `by ${data.triggerId} (${data.trigger})` : `by ${data.trigger}`}>{() => <LongText language="json" text={json(data.payload)} />}</Collapsible> };
     case 'step_started':
       return { label: 'Block started', tone: 'heading', body: data.name };
     case 'step_finished':
-      return { label: 'Block finished', body: <Collapsible summary="Output">{() => <LongText text={json(data.output)} />}</Collapsible> };
+      return { label: 'Finished', body: <Collapsible summary="Output">{() => <LongText language="json" text={json(data.output)} />}</Collapsible> };
     case 'step_skipped':
       return { label: 'Block skipped', tone: 'heading', body: `${data.name}: ${data.reason}` };
     case 'condition':
@@ -92,11 +91,11 @@ function describe(event: RunEvent): { label: string; tone?: string; body: ReactN
     case 'claude_text':
       return { label: 'Claude', tone: 'claude', body: <LongText as="markdown" text={String(data.text ?? '')} /> };
     case 'claude_tool':
-      return { label: 'Tool call', body: <Collapsible summary={<code>{data.tool}</code>}>{() => <LongText text={json(data.input)} />}</Collapsible> };
+      return { label: 'Tool call', body: <Collapsible summary={<code>{data.tool}</code>}>{() => <LongText language="json" text={json(data.input)} />}</Collapsible> };
     case 'claude_tool_result':
       return { label: data.isError ? 'Tool error' : 'Tool result', tone: data.isError ? 'bad' : undefined, body: <Collapsible summary={firstLine(String(data.output))}>{() => <LongText text={String(data.output)} />}</Collapsible> };
     case 'command':
-      return { label: 'Command', body: <pre>$ {data.command}</pre> };
+      return { label: 'Command', body: <CodeBlock className="command-line" language="bash" code={String(data.command ?? '')} /> };
     case 'output':
       return { label: 'Output', body: <LongText text={String(data.text ?? '')} keep="end" /> };
     case 'log':
@@ -120,7 +119,7 @@ function describe(event: RunEvent): { label: string; tone?: string; body: ReactN
       return { label: `Workflow edits applied${versions}`, tone: 'heading', body: `${summary}. Continues with ${data.continueAt ?? 'the end of the run'}.` };
     }
     case 'value_set':
-      return { label: data.replaced ? 'Value changed' : 'Value added', body: <><code>{`vars.${data.name}`}</code> = <LongText text={typeof data.value === 'string' ? data.value : json(data.value)} /></> };
+      return { label: data.replaced ? 'Value changed' : 'Value added', body: <><code>{`vars.${data.name}`}</code> = <LongText text={typeof data.value === 'string' ? data.value : json(data.value)} language={typeof data.value === 'string' ? undefined : 'json'} /></> };
     case 'value_removed':
       return { label: 'Value removed', body: <code>{`vars.${data.name}`}</code> };
     case 'retried':

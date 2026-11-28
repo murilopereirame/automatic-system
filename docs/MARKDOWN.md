@@ -59,6 +59,12 @@ flowchart LR
   address. An image is shown as `[image: alt text]`, a link you can open
   yourself.
 
+- **Code blocks are highlighted without HTML strings.** A fenced block with a
+  bundled language (```` ```ts ````, ```` ```json ````, ...) goes through
+  `rehype-highlight`, which adds `<span>` elements to the same syntax tree;
+  other languages stay plain. No language is guessed. See
+  [UI.md](UI.md#syntax-highlighting).
+
 `web/test/markdown.test.ts` renders hostile input (script tags, handler
 attributes, `javascript:` in several spellings, `data:` links, tracking
 images) and checks none of it reaches the output.

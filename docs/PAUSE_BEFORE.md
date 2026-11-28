@@ -3,7 +3,7 @@
 Two ways to change what Claude is asked, on a run that is already going,
 without editing the workflow:
 
-1. **Pause before a block.** Tick **Pause before this block runs** on any
+1. **Pause before a block.** Turn on **Pause before this block runs** on any
    block. The run stops right before that block starts and waits for you. On
    a **Run Claude** block the pause shows the prompt it is about to send,
    with every `{{template}}` already filled in, and you can change it before

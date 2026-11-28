@@ -17,7 +17,13 @@ test('renders headings, lists, code, tables and task lists', () => {
   assert.match(html, /<code>api\.ts<\/code>/);
   assert.match(html, /<table>/);
   assert.match(html, /type="checkbox"[^>]*checked=""[^>]*disabled=""|type="checkbox"[^>]*disabled=""[^>]*checked=""/);
-  assert.match(html, /<pre><code class="language-ts">const x = 1;\n<\/code><\/pre>/);
+  assert.match(html, /<pre><code class="hl language-ts"><span class="hl-keyword">const<\/span> x = <span class="hl-number">1<\/span>;\n<\/code><\/pre>/);
+});
+
+test('code in a language that is not bundled stays plain, and highlighting adds no markup from the text', () => {
+  const html = render(['```cobol', 'DISPLAY "<b>hi</b>".', '```', '', '```json', '{"a": "<img src=x onerror=alert(1)>"}', '```'].join('\n'));
+  assert.match(html, /<code class="hl language-cobol">DISPLAY &quot;&lt;b&gt;hi&lt;\/b&gt;&quot;\.\n<\/code>/);
+  assert.doesNotMatch(html, /<img|<b>/);
 });
 
 test('raw HTML is shown as text, never as elements', () => {
