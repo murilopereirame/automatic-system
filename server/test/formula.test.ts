@@ -121,3 +121,18 @@ test('workflows stored with the older single trigger are read as a list', () => 
   db.prepare('UPDATE workflows SET definition = ? WHERE id = ?').run(JSON.stringify(old), workflow.id);
   assert.deepEqual(getWorkflow(workflow.id)!.definition.triggers, [{ id: 'webhook', type: 'webhook', with: {} }]);
 });
+
+test('keeps node positions from the flow editor, and leaves the layout out when there is none', () => {
+  const base = 'apiVersion: autoworker/v1\nkind: Formula\nmetadata: { name: x }\nsteps:\n  - { id: a, type: shell, with: { command: "true" } }\n';
+  assert.equal(parseFormula(base).definition.layout, undefined);
+  assert.equal(parseFormula(`${base}layout: { positions: {} }\n`).definition.layout, undefined);
+
+  const input = parseFormula(`${base}layout:\n  positions:\n    "step:a": { x: 400.4, y: -120 }\n    manual: { x: 0, y: 0 }\n`);
+  assert.deepEqual(input.definition.layout, { positions: { 'step:a': { x: 400, y: -120 }, manual: { x: 0, y: 0 } } });
+
+  const workflow = { ...input, id: 'w1', description: '', enabled: true, hookSecret: 's', version: 0, createdAt: '', updatedAt: '' };
+  assert.deepEqual(parseFormula(toFormula(workflow)).definition.layout, input.definition.layout);
+  assert.ok(!toFormula({ ...workflow, definition: parseFormula(base).definition }).includes('layout'));
+
+  assert.throws(() => parseFormula(`${base}layout: { positions: { "step:a": { x: left, y: 1 } } }\n`), /needs numbers x and y/);
+});

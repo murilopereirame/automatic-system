@@ -10,11 +10,14 @@
  *   [trigger]  ├──▶ [block 1] ─▶ [block 2] ─▶ ... ─▶ (End)
  *   [trigger]  ┘
  *
- * Blocks always sit on one line in the order they run. Jumps (condition outcomes, "go back to"
- * after a rejected approval) are drawn as arcs above or below that line, so the order stays
+ * Untouched, blocks sit on one line in the order they run. Jumps (condition outcomes, "go back
+ * to" after a rejected approval) are drawn as arcs above or below that line, so the order stays
  * readable however a workflow branches.
+ *
+ * Any node can be dragged elsewhere. Its position is then saved in the workflow's `layout` and
+ * used instead of the automatic one; edges touching a moved node are routed from where it is.
  */
-import type { StepConfig, TriggerConfig } from '../api.ts';
+import type { NodePosition, StepConfig, TriggerConfig } from '../api.ts';
 
 export const NODE_WIDTH = 240;
 export const NODE_HEIGHT = 76;
@@ -37,6 +40,8 @@ export interface GraphNode {
   height: number;
   /** Position in `triggers` or `steps`, for trigger and step nodes. */
   index?: number;
+  /** True when the node is at a position someone dragged it to, not the automatic one. */
+  moved?: boolean;
 }
 
 /**
@@ -83,11 +88,9 @@ export const columnX = (column: number) => column * COLUMN_STEP;
 /** The column a step at `index` sits in. Column 0 holds "Run now" and the triggers. */
 export const stepColumn = (index: number) => index + 1;
 
-/** Where a step being dragged with its left edge at `x` would land, as an index in `steps`. */
-export function dropIndex(x: number, stepCount: number): number {
-  const index = Math.round((x - columnX(1)) / COLUMN_STEP);
-  return Math.max(0, Math.min(stepCount - 1, index));
-}
+/** Positions are snapped to this grid (the canvas dots), so moved nodes line up easily. */
+export const GRID = 20;
+export const snap = (value: number) => Math.round(value / GRID) * GRID;
 
 /**
  * Where an outcome of a block continues, as a column: '' means the next block, '$end' the end,
@@ -161,57 +164,97 @@ function outgoing(step: StepConfig, index: number, steps: StepConfig[]): Outgoin
   return [{ tone: 'next', handle: 0.5, toColumn: next }];
 }
 
-export function buildGraph(triggers: TriggerConfig[], steps: StepConfig[]): Graph {
+/** Where an edge leaves a node (its right side) and enters one (its left side, in the middle). */
+const outPoint = (node: GraphNode, share: number): [number, number] => [node.x + node.width, node.y + node.height * share];
+const inPoint = (node: GraphNode): [number, number] => [node.x, node.y + node.height / 2];
+
+/**
+ * Path between two moved or freely placed nodes: a curve when the target is to the right (or only a
+ * little to the left, where an S-curve still reads well), else a loop below both nodes so the edge
+ * never runs back through them.
+ */
+function freePath(source: GraphNode, [sx, sy]: [number, number], target: GraphNode, [tx, ty]: [number, number]) {
+  if (tx >= sx - 40) return { path: curve(sx, sy, tx, ty), labelX: (sx + tx) / 2, labelY: (sy + ty) / 2 - 14, laneY: undefined };
+  const laneY = Math.max(source.y + source.height, target.y + target.height) + 30;
+  const path = roundedPath([
+    [sx, sy],
+    [sx + 20, sy],
+    [sx + 20, laneY],
+    [tx - 20, laneY],
+    [tx - 20, ty],
+    [tx, ty],
+  ]);
+  return { path, labelX: (sx + tx) / 2, labelY: laneY, laneY };
+}
+
+/**
+ * @param positions where nodes were dragged to, by node key (the workflow's `layout.positions`).
+ *   Nodes without one, or all of them when it is missing, get the automatic layout.
+ */
+export function buildGraph(triggers: TriggerConfig[], steps: StepConfig[], positions: Record<string, NodePosition> = {}): Graph {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
   const box = { width: NODE_WIDTH, height: NODE_HEIGHT };
+  /** The node at its automatic position, or where it was moved to. */
+  const place = (node: GraphNode): GraphNode => {
+    const moved = positions[node.key];
+    return moved && node.kind !== 'placeholder' ? { ...node, x: moved.x, y: moved.y, moved: true } : node;
+  };
 
   // Column 0: "Run now" and the triggers, stacked and centred on the line of the blocks.
   const entryKeys = ['manual', ...triggers.map((trigger) => `trigger:${trigger.id}`)];
   const columnHeight = entryKeys.length * NODE_HEIGHT + (entryKeys.length - 1) * ROW_GAP;
   const top = NODE_HEIGHT / 2 - columnHeight / 2;
   entryKeys.forEach((key, row) => {
-    nodes.push({ key, kind: row === 0 ? 'manual' : 'trigger', x: 0, y: top + row * (NODE_HEIGHT + ROW_GAP), ...box, index: row === 0 ? undefined : row - 1 });
+    nodes.push(place({ key, kind: row === 0 ? 'manual' : 'trigger', x: 0, y: top + row * (NODE_HEIGHT + ROW_GAP), ...box, index: row === 0 ? undefined : row - 1 }));
   });
 
-  steps.forEach((step, index) => nodes.push({ key: `step:${step.id}`, kind: 'step', x: columnX(stepColumn(index)), y: 0, ...box, index }));
+  steps.forEach((step, index) => nodes.push(place({ key: `step:${step.id}`, kind: 'step', x: columnX(stepColumn(index)), y: 0, ...box, index })));
 
   // The end of the run, or a dashed "add the first block" card while there are none.
   const endColumn = stepColumn(steps.length);
-  const end: GraphNode =
-    steps.length === 0 ? { key: 'placeholder', kind: 'placeholder', x: columnX(endColumn), y: 0, ...box } : { key: 'end', kind: 'end', x: columnX(endColumn), y: NODE_HEIGHT / 2 - 22, width: 44, height: 44 };
+  const end: GraphNode = place(
+    steps.length === 0 ? { key: 'placeholder', kind: 'placeholder', x: columnX(endColumn), y: 0, ...box } : { key: 'end', kind: 'end', x: columnX(endColumn), y: NODE_HEIGHT / 2 - 22, width: 44, height: 44 },
+  );
   nodes.push(end);
 
-  const keyAt = (column: number) => (column === endColumn ? end.key : `step:${steps[column - 1].id}`);
-  const leftHandle = (column: number): [number, number] => [columnX(column), NODE_HEIGHT / 2];
+  /** The node in a column: column 0 is the entries, 1..n the blocks, n+1 the end. */
+  const nodeAt = (column: number) => (column === endColumn ? end : nodes[entryKeys.length + column - 1]);
+  let minLaneY = 0;
+  let maxLaneY = 0;
+  const addFree = (key: string, source: GraphNode, share: number, target: GraphNode, tone: EdgeTone, label?: string) => {
+    const free = freePath(source, outPoint(source, share), target, inPoint(target));
+    if (free.laneY !== undefined) maxLaneY = Math.max(maxLaneY, free.laneY);
+    edges.push({ key, from: source.key, to: target.key, tone, label, path: free.path, labelX: free.labelX, labelY: free.labelY });
+  };
 
   // Into the first block from every entry.
-  const [firstX, firstY] = leftHandle(1);
+  const first = nodeAt(1);
   for (const entry of nodes.slice(0, entryKeys.length)) {
-    const sy = entry.y + NODE_HEIGHT / 2;
-    edges.push({ key: `${entry.key}->${keyAt(1)}`, from: entry.key, to: keyAt(1), tone: 'entry', path: curve(NODE_WIDTH, sy, firstX, firstY), labelX: 0, labelY: 0 });
+    const [sx, sy] = outPoint(entry, 0.5);
+    const [tx, ty] = inPoint(first);
+    if (entry.moved || first.moved) addFree(`${entry.key}->${first.key}`, entry, 0.5, first, 'entry');
+    else edges.push({ key: `${entry.key}->${first.key}`, from: entry.key, to: first.key, tone: 'entry', path: curve(sx, sy, tx, ty), labelX: 0, labelY: 0 });
   }
 
-  // Between blocks. Edges to the next column are curves; jumps go around the line in lanes.
+  // Between blocks. Between unmoved blocks, edges to the next column are curves and jumps go
+  // around the line in lanes; edges touching a moved block are routed from where it is.
   const jumps: (Outgoing & { from: number; sx: number; sy: number })[] = [];
   steps.forEach((step, index) => {
     const column = stepColumn(index);
+    const source = nodeAt(column);
     for (const edge of outgoing(step, index, steps)) {
-      const sx = columnX(column) + NODE_WIDTH;
-      const sy = NODE_HEIGHT * edge.handle;
+      const target = nodeAt(edge.toColumn);
+      const key = `${source.key}->${target.key}:${edge.tone}`;
+      if (source.moved || target.moved) {
+        addFree(key, source, edge.handle, target, edge.tone, edge.label);
+        continue;
+      }
+      const [sx, sy] = outPoint(source, edge.handle);
       if (edge.toColumn === column + 1) {
-        const [tx, ty] = leftHandle(edge.toColumn);
+        const [tx, ty] = inPoint(target);
         // The label sits above the line, clear of the "+" in the middle of the gap.
-        edges.push({
-          key: `${keyAt(column)}->${keyAt(edge.toColumn)}:${edge.tone}`,
-          from: keyAt(column),
-          to: keyAt(edge.toColumn),
-          tone: edge.tone,
-          label: edge.label,
-          path: curve(sx, sy, tx, ty),
-          labelX: (sx + tx) / 2,
-          labelY: Math.min(sy, ty) - 14,
-        });
+        edges.push({ key, from: source.key, to: target.key, tone: edge.tone, label: edge.label, path: curve(sx, sy, tx, ty), labelX: (sx + tx) / 2, labelY: Math.min(sy, ty) - 14 });
       } else {
         jumps.push({ ...edge, from: column, sx, sy });
       }
@@ -230,7 +273,11 @@ export function buildGraph(triggers: TriggerConfig[], steps: StepConfig[]): Grap
     lanes[side][lane].push(span);
     const offset = 30 + lane * 22;
     const laneY = side === 'above' ? -offset : NODE_HEIGHT + offset;
-    const [tx, ty] = leftHandle(jump.toColumn);
+    minLaneY = Math.min(minLaneY, laneY);
+    maxLaneY = Math.max(maxLaneY, laneY);
+    const source = nodeAt(jump.from);
+    const target = nodeAt(jump.toColumn);
+    const [tx, ty] = inPoint(target);
     const path = roundedPath([
       [jump.sx, jump.sy],
       [jump.sx + 20, jump.sy],
@@ -239,22 +286,25 @@ export function buildGraph(triggers: TriggerConfig[], steps: StepConfig[]): Grap
       [tx - 20, ty],
       [tx, ty],
     ]);
-    const from = keyAt(jump.from);
-    const to = keyAt(jump.toColumn);
-    edges.push({ key: `${from}->${to}:${jump.tone}`, from, to, tone: jump.tone, label: jump.label, path, labelX: (jump.sx + tx) / 2, labelY: laneY });
+    edges.push({ key: `${source.key}->${target.key}:${jump.tone}`, from: source.key, to: target.key, tone: jump.tone, label: jump.label, path, labelX: (jump.sx + tx) / 2, labelY: laneY });
   }
 
+  // A "+" in front of every block and the end: halfway from the block before when that one is to
+  // the left, otherwise just left of the node.
   const inserts: InsertPoint[] = [];
   for (let index = 0; index <= steps.length; index += 1) {
-    inserts.push({ index, x: columnX(stepColumn(index)) - COLUMN_GAP / 2, y: NODE_HEIGHT / 2 });
+    const target = nodeAt(stepColumn(index));
+    const [tx, ty] = inPoint(target);
+    const previous = index > 0 ? nodeAt(stepColumn(index - 1)) : undefined;
+    const [px, py] = previous ? outPoint(previous, 0.5) : [tx - COLUMN_GAP, ty];
+    inserts.push(px < tx - 24 ? { index, x: (px + tx) / 2, y: (py + ty) / 2 } : { index, x: tx - COLUMN_GAP / 2, y: ty });
   }
 
-  const laneDepth = (count: number) => (count ? 30 + (count - 1) * 22 + 16 : 0);
   const bounds: Bounds = {
-    minX: 0,
-    minY: Math.min(top, -laneDepth(lanes.above.length)),
-    maxX: end.x + end.width,
-    maxY: Math.max(top + columnHeight, NODE_HEIGHT + laneDepth(lanes.below.length)),
+    minX: Math.min(...nodes.map((node) => node.x), ...inserts.map((point) => point.x)),
+    minY: Math.min(...nodes.map((node) => node.y), minLaneY - 16),
+    maxX: Math.max(...nodes.map((node) => node.x + node.width)),
+    maxY: Math.max(...nodes.map((node) => node.y + node.height), maxLaneY + 16),
   };
   return { nodes, edges, inserts, bounds };
 }

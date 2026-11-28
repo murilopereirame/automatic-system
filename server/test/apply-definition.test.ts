@@ -46,6 +46,12 @@ test('the plan says which changes the run will pick up and which it already pass
   assert.equal(planApply(current, current, 1).upToDate, true);
 });
 
+test('moving nodes in the flow editor leaves runs up to date', () => {
+  const current = definitionWith([shell('a', 'echo a')]);
+  const moved = { ...current, layout: { positions: { 'step:a': { x: 10, y: 20 } } } };
+  assert.equal(planApply(current, moved, 0).upToDate, true);
+});
+
 // ---- Runs ------------------------------------------------------------------
 
 test('a failed run picks up the fixed block on retry, and finished blocks do not run again', async () => {

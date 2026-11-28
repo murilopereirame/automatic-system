@@ -29,10 +29,10 @@ Edges show where a run goes next:
 | `approved` / red dashed `rejected` | An **Approval** block that goes back to an earlier block when rejected (`onReject`) |
 | Faint dotted | The next block in the order, which a condition never goes to directly |
 
-Blocks always stay on one line in the order they run. Jumps to a block that is
-not the next one are drawn around that line: forward `true` jumps above, every
-other jump below, each in its own lane so overlapping jumps do not cover each
-other.
+Until you move them, blocks sit on one line in the order they run. Jumps to a
+block that is not the next one are drawn around that line: forward `true`
+jumps above, every other jump below, each in its own lane so overlapping jumps
+do not cover each other.
 
 ![Condition and approval edges](images/conditions-editor.png)
 
@@ -46,7 +46,9 @@ other.
 | Edit a node | Click it (or Tab to it and press Enter). The side panel opens |
 | Add a block | `+` between two nodes, **+ Block** (adds at the end), or click **End** |
 | Add a trigger | **+ Trigger** |
-| Reorder | Drag a block sideways; the others slide to make room. Or **← Earlier** / **Later →** in its panel |
+| Move a node | Drag it anywhere; it snaps to the dots. See [Moving nodes](#moving-nodes) |
+| Change the order blocks run in | **← Earlier** / **Later →** in the block's panel |
+| Put everything back in place | **Tidy up** (shown once a node was moved) |
 | Remove | `✕` on the node when hovering, **Remove** in its panel, or Delete/Backspace on the selected block |
 | Close the panel | `✕`, Escape, or click the empty canvas |
 
@@ -59,6 +61,33 @@ as you type; arrow keys and Enter pick one.
 
 Changing a block's id in its panel also updates the conditions and approvals
 that point to it, so jumps keep working.
+
+## Moving nodes
+
+Any node (Run now, triggers, blocks, End) can be dragged anywhere on the
+canvas, and the edges follow it while you drag. Where it was let go is saved
+with the workflow, in the formula's `layout` (see
+[FORMULA.md](FORMULA.md#layout)), so an exported and imported formula looks
+the same. Moving a node changes where it is drawn, not when it runs: the order
+of the blocks is the order in their panels (block 1, 2, ...), changed with
+**← Earlier** / **Later →**.
+
+![Moved nodes, with Tidy up in the toolbar](images/flow-moved.png)
+
+```mermaid
+flowchart LR
+    D[Drag a node] -->|while dragging| L[Edges follow, position snaps to the grid]
+    L -->|let go| S[Position stored in layout.positions]
+    S --> Save[Save: part of the next version and the formula]
+    T[Tidy up] -->|clears layout| A[Every node back to the automatic layout]
+```
+
+Nodes that were never moved keep their automatic place, so a block added
+later appears in its column even when others were moved. Edges between two
+unmoved blocks keep the lanes described above; an edge touching a moved node
+is a curve from its source to its target, or a loop below both when the
+target is behind the source. **Tidy up** forgets every saved position.
+Renaming a block keeps its position; removing one drops it.
 
 A workflow opens fitted to the canvas when it is still readable that way
 (70 % or more); a long one opens at its start instead, and **Fit** shows all of it.
@@ -78,10 +107,10 @@ flowchart TD
 
 | File | Does |
 |------|------|
-| `web/src/flow/graph.ts` | Pure layout: node positions, edge paths (with lanes for jumps), insert points, bounds, where a dragged block lands |
+| `web/src/flow/graph.ts` | Pure layout: automatic and saved node positions, edge paths (lanes for jumps, curves and loops around moved nodes), insert points, bounds, grid snapping |
 | `web/src/flow/viewport.ts` | Pure pan/zoom math |
-| `web/src/flow/FlowCanvas.tsx` | Pointer, wheel and pinch handling, drawing, drag to reorder, toolbar and zoom controls, the sliding side panel |
-| `web/src/flow/FlowEditor.tsx` | The editing: add, change, move, remove blocks and triggers; what each node shows |
+| `web/src/flow/FlowCanvas.tsx` | Pointer, wheel and pinch handling, drawing, dragging nodes, toolbar and zoom controls, the sliding side panel |
+| `web/src/flow/FlowEditor.tsx` | The editing: add, change, reorder, remove blocks and triggers, saved positions and Tidy up; what each node shows |
 | `web/src/flow/NodePanel.tsx` | Side panels for **Run now**, a trigger and a block |
 | `web/src/flow/NodePicker.tsx` | The add panel |
 | `web/src/flow/node-style.tsx` | Icon and colour per type; unknown types get a neutral square |

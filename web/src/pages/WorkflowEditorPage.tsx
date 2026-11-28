@@ -209,16 +209,15 @@ export function WorkflowEditorPage({ workflowId }: { workflowId?: string }) {
             steps={draft.definition.steps}
             secretNames={secrets.data ?? []}
             hooks={saved && { workflowId: saved.id, secret: saved.hookSecret }}
-            onTriggersChange={(triggers) => setDefinition({ triggers })}
-            onInputsChange={(inputs) => setDefinition({ inputs })}
-            onStepsChange={(steps) => setDefinition({ steps })}
+            layout={draft.definition.layout}
+            onChange={setDefinition}
           />
         )}
         {tab === 'Settings' && (
           <section className="card workflow-settings">
-            <label className="field">
+            <label className="field wide-field">
               <span>Description</span>
-              <input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
+              <textarea rows={3} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="What this workflow does, shown in the list of workflows" />
             </label>
             <label className="field checkbox">
               <input type="checkbox" role="switch" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />

@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { StepConfig, TriggerConfig } from '../src/api.ts';
-import { buildGraph, COLUMN_STEP, dropIndex, NODE_HEIGHT, roundedPath } from '../src/flow/graph.ts';
+import { buildGraph, COLUMN_STEP, NODE_HEIGHT, roundedPath, snap } from '../src/flow/graph.ts';
 import { fitView, initialView, MAX_ZOOM, MIN_ZOOM, zoomAround } from '../src/flow/viewport.ts';
 
 const step = (id: string, type = 'shell', settings: Record<string, unknown> = {}): StepConfig => ({ id, type, name: id, with: settings });
@@ -106,12 +106,38 @@ test('there is a "+" before every block and before the end', () => {
   assert.ok(graph.inserts[1].x > COLUMN_STEP && graph.inserts[1].x < 2 * COLUMN_STEP);
 });
 
-test('a dragged block lands on the nearest column, within the blocks', () => {
-  assert.equal(dropIndex(COLUMN_STEP, 3), 0);
-  assert.equal(dropIndex(COLUMN_STEP * 2.4, 3), 1);
-  assert.equal(dropIndex(COLUMN_STEP * 2.6, 3), 2);
-  assert.equal(dropIndex(-500, 3), 0);
-  assert.equal(dropIndex(COLUMN_STEP * 40, 3), 2);
+test('a moved node is drawn where it was dragged to, the others keep their automatic place', () => {
+  const graph = buildGraph([], [step('a'), step('b')], { 'step:b': { x: 300, y: 400 } });
+  const at = (key: string) => graph.nodes.find((node) => node.key === key)!;
+  assert.deepEqual([at('step:b').x, at('step:b').y, at('step:b').moved], [300, 400, true]);
+  assert.deepEqual([at('step:a').x, at('step:a').y, at('step:a').moved], [COLUMN_STEP, 0, undefined]);
+  assert.ok(graph.bounds.maxY >= 400 + NODE_HEIGHT);
+});
+
+test('edges follow a moved node, and loop below when it ends up behind', () => {
+  const graph = buildGraph([], [step('a'), step('b')], { 'step:b': { x: 0, y: 300 } });
+  const [into] = edge(graph, 'step:a', 'step:b');
+  // Leaves the right side of a and enters the left side of b where b now is.
+  assert.match(into.path, new RegExp(`^M ${COLUMN_STEP + 240} ${NODE_HEIGHT / 2} `));
+  assert.match(into.path, new RegExp(` L 0 ${300 + NODE_HEIGHT / 2}$`));
+  assert.ok(into.labelY > 300 + NODE_HEIGHT, 'the loop runs below both nodes');
+});
+
+test('the "+" in front of a moved block sits halfway from the block before it', () => {
+  const graph = buildGraph([], [step('a'), step('b')], { 'step:b': { x: COLUMN_STEP * 3, y: 200 } });
+  const point = graph.inserts[1];
+  assert.equal(point.x, (COLUMN_STEP + 240 + COLUMN_STEP * 3) / 2);
+  assert.equal(point.y, (NODE_HEIGHT / 2 + 200 + NODE_HEIGHT / 2) / 2);
+});
+
+test('the empty-workflow placeholder ignores a saved position', () => {
+  const graph = buildGraph([], [], { placeholder: { x: 999, y: 999 } });
+  assert.notEqual(graph.nodes.at(-1)!.x, 999);
+});
+
+test('dragged positions snap to the grid of the canvas', () => {
+  assert.equal(snap(31), 40);
+  assert.equal(snap(-29), -20);
 });
 
 test('rounded paths start and end at the given points', () => {

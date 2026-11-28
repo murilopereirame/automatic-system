@@ -15,7 +15,7 @@ import { parseInputs } from './inputs.js';
 import { getStepType } from './steps/index.js';
 import type { HistoryEntry, WorkflowInput } from './store/workflows.js';
 import { getTriggerType } from './triggers/index.js';
-import { CLEANUP_WHEN, cleanupPolicy, emptyEnvironment, SCOPE_NAMES, type CleanupPolicy, type Environment, type MemoryFile, type NotificationWebhook, type ServiceSpec, type SkillSpec, type StepConfig, type TriggerConfig, type VersionSource, type Workflow, type WorkflowDefinition, type WorkflowVersion } from './types.js';
+import { CLEANUP_WHEN, cleanupPolicy, emptyEnvironment, SCOPE_NAMES, type CleanupPolicy, type Environment, type FlowLayout, type NodePosition, type MemoryFile, type NotificationWebhook, type ServiceSpec, type SkillSpec, type StepConfig, type TriggerConfig, type VersionSource, type Workflow, type WorkflowDefinition, type WorkflowVersion } from './types.js';
 
 export const FORMULA_API_VERSION = 'autoworker/v1';
 
@@ -196,6 +196,25 @@ function parseCleanup(input: unknown): CleanupPolicy {
   return { when: when as CleanupPolicy['when'] };
 }
 
+/** Longest node key a layout may hold: `step:` plus a block id. */
+const MAX_LAYOUT_KEY = 200;
+
+/** Reads the optional `layout`: node positions from the flow editor. Empty or missing means automatic layout. */
+function parseLayout(input: unknown): FlowLayout | undefined {
+  if (input === undefined || input === null) return undefined;
+  const positions = asObject(asObject(input, 'layout').positions, 'layout.positions');
+  const clean: Record<string, NodePosition> = {};
+  for (const [key, value] of Object.entries(positions)) {
+    if (key.length > MAX_LAYOUT_KEY) invalid(`layout key "${key.slice(0, 40)}…" is too long`);
+    const point = asObject(value, `layout position of "${key}"`);
+    const x = Number(point.x);
+    const y = Number(point.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) invalid(`layout position of "${key}" needs numbers x and y`);
+    clean[key] = { x: Math.round(x), y: Math.round(y) };
+  }
+  return Object.keys(clean).length ? { positions: clean } : undefined;
+}
+
 /** Validates untrusted input (API body or parsed YAML) and returns a clean definition. */
 export function parseDefinition(input: unknown): WorkflowDefinition {
   const raw = asObject(input, 'the workflow');
@@ -206,7 +225,13 @@ export function parseDefinition(input: unknown): WorkflowDefinition {
     notifications: parseNotifications(raw.notifications),
     steps: parseSteps(raw.steps),
     cleanup: parseCleanup(raw.cleanup),
+    ...optional('layout', parseLayout(raw.layout)),
   };
+}
+
+/** `{ [key]: value }` when there is a value, else nothing, so absent fields stay absent. */
+function optional<K extends string, V>(key: K, value: V | undefined): Partial<Record<K, V>> {
+  return value === undefined ? {} : ({ [key]: value } as Record<K, V>);
 }
 
 const VERSION_SOURCES: VersionSource[] = ['created', 'edited', 'imported', 'restored'];
@@ -293,6 +318,7 @@ export function toFormula(workflow: Workflow, options: FormulaOptions = {}): str
     notifications,
     cleanup: cleanupPolicy(workflow.definition),
     steps,
+    ...optional('layout', workflow.definition.layout),
     ...(options.history?.length && {
       history: [...options.history]
         .sort((left, right) => left.version - right.version)

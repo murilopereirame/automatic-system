@@ -13,7 +13,7 @@
  * Nothing here touches the database: `planApply` is a pure function, which
  * keeps it easy to test and lets the UI show the plan before it is applied.
  */
-import type { StepConfig, WorkflowDefinition } from '../types.js';
+import { withoutLayout, type StepConfig, type WorkflowDefinition } from '../types.js';
 
 /** How one block differs between the run's definition and the new one. */
 export type BlockChangeKind = 'added' | 'removed' | 'changed';
@@ -90,7 +90,8 @@ export function planApply(current: WorkflowDefinition, next: WorkflowDefinition,
   const sections = SECTIONS.filter((section) => !same(current[section], next[section]));
   const currentStep = current.steps[position];
   return {
-    upToDate: same(current, next),
+    // The editor's layout changes nothing a run does.
+    upToDate: same(withoutLayout(current), withoutLayout(next)),
     blocks,
     sections,
     continueAt: next.steps[continueIndex]?.id ?? null,
